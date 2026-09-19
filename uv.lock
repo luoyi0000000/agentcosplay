@@ -202,8 +202,8 @@ wheels = [
 ]
 
 [[package]]
-name = "character-runtime"
-version = "0.1.0"
+name = "agentcosplay"
+version = "1.0.1"
 source = { editable = "." }
 dependencies = [
     { name = "mcp" },

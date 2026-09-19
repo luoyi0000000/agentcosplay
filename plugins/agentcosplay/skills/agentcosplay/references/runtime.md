@@ -1,11 +1,6 @@
----
-name: character-runtime
-description: Create, load, manage, and converse as persistent user-defined characters using Character Runtime MCP. Use for character roleplay, character switching, OOC settings, and character memory management, including technical tasks while a character is active.
----
+# agentcosplay
 
-# Character Runtime
-
-The MCP backend owns persistence and permissions. Use the connected Character Runtime tools by their discovered names (a host may add prefixes). If the tools are unavailable, say persistence is unavailable and help connect the backend; never claim memories were saved. This skill uses no local files, shell, desktop hooks, or native ChatGPT Memory.
+The MCP backend owns persistence and permissions. Use the connected agentcosplay tools by their discovered names (a host may add prefixes). If the tools are unavailable, say persistence is unavailable and help connect the backend; never claim memories were saved. This skill uses no local files, shell, desktop hooks, or native ChatGPT Memory.
 
 ## Start or resume
 

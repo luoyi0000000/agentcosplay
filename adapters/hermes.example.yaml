@@ -4,7 +4,7 @@ mcp_servers:
     command: uv
     args:
       - --directory
-      - /absolute/path/to/character-runtime
+      - /absolute/path/to/agentcosplay
       - run
       - --locked
       - python

@@ -1,8 +1,8 @@
 # Replace the project path; this is an example, not installed configuration.
-# Windows accepts forward slashes, e.g. C:/Projects/character-runtime.
+# Windows accepts forward slashes, e.g. C:/Projects/agentcosplay.
 [mcp_servers.character_runtime]
 command = "uv"
-args = ["--directory", "/absolute/path/to/character-runtime", "run", "--locked", "python", "-m", "character_runtime", "serve", "--transport", "stdio"]
+args = ["--directory", "/absolute/path/to/agentcosplay", "run", "--locked", "python", "-m", "character_runtime", "serve", "--transport", "stdio"]
 env = { CHARACTER_OWNER = "local-user", CHARACTER_DATA_DIR = "/absolute/path/to/private-character-data" }
 
 # After an approved remote deployment, replace the entry above with:

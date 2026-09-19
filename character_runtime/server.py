@@ -13,6 +13,7 @@ from mcp.types import ToolAnnotations
 from pydantic import AnyHttpUrl, Field, ValidationError
 from starlette.applications import Starlette
 
+from . import __version__
 from .auth import JWTVerifier, LocalTokenVerifier
 from .models import (
     Candidate,
@@ -131,8 +132,8 @@ def build_server(
             validate_token_resource=True,
         )
     server: MCPServer[Any] = MCPServer(
-        "Character Runtime",
-        version="0.1.0",
+        "agentcosplay",
+        version=__version__,
         token_verifier=verifier,
         auth=auth,
         log_level="CRITICAL",

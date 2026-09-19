@@ -11,7 +11,7 @@ from .storage import SQLiteStorage
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Character Runtime")
+    parser = argparse.ArgumentParser(description="agentcosplay")
     sub = parser.add_subparsers(dest="command", required=True)
     serve = sub.add_parser("serve")
     serve.add_argument("--transport", choices=["stdio", "http"], default="stdio")

@@ -1,5 +1,7 @@
 # 本次实际本地演示
 
+> 本文保留初版设计/验证历史，不代表当前发布入口或托管状态。最新分发说明见 [distribution.md](distribution.md)。
+
 2026-09-19（Asia/Shanghai）。所有角色、输入和记忆均为合成数据；没有用户私人记忆或外部模型 API 调用。
 
 ## 可复现的协议与状态演示
@@ -7,7 +9,7 @@
 运行 `uv run --locked python -m character_runtime.demo`，真实输出：
 
 ```text
-Character Runtime：确定性协议/状态演示（台词与候选不是模型生成）
+agentcosplay：确定性协议/状态演示（台词与候选不是模型生成）
 PASS 真实 MCP 创建/激活/提交：低重要性候选丢弃，长期与会话记忆分开。
 PASS 服务进程重启 + 新会话召回： 角色世界：用户希望被称作旅人，约好下次一起看灯塔。
 PASS 角色 B 看不到 A 的记忆。

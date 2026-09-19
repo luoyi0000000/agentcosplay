@@ -1,5 +1,7 @@
 # 中断点追加复核与修复
 
+> 本文保留初版设计/验证历史，不代表当前发布入口或托管状态。最新分发说明见 [distribution.md](distribution.md)。
+
 日期：2026-09-19。基线：本地提交 `5d28049`。本次检查了前两次续接工作涉及的 Memory、成长证据、Package、MCP、认证、SQLite 与交付产物。
 
 两次中断没有各自独立的 Git 快照，因此无法证明下面缺陷由中断直接造成。它们是在当前基线上实际复现的遗漏，不能用“之前45项测试已通过”排除。已补失败测试、修复根因并复跑；没有进行远程写入。
@@ -29,7 +31,7 @@ P1 条件取决于父目录是否允许其他账号遍历；本次没有发现�
 
 ## 新增人物表达要求
 
-落点：`character_runtime/rules.py:12`、`skills/character-runtime/SKILL.md:27`，复用原有 `facts.speech_style`；示例角色卡同步更新，没有新增一套人格数据库或自动文本改写器。
+落点：`character_runtime/rules.py:12`、`plugins/agentcosplay/skills/agentcosplay/SKILL.md:27`，复用原有 `facts.speech_style`；示例角色卡同步更新，没有新增一套人格数据库或自动文本改写器。
 
 - 自然、直接、连贯，短句为主；避免模板过渡、重复铺垫和空洞辞藻。
 - 数字、条件、事实、不确定性保留准确；代码/JSON/引用不为口吻而改写。

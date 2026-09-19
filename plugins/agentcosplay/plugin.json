@@ -1,0 +1,28 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "agentcosplay",
+  "version": "1.0.1",
+  "description": "自然角色对话、角色切换与 OOC；连接后端后支持独立长期记忆。",
+  "keywords": [
+    "roleplay",
+    "character",
+    "memory"
+  ],
+  "extensions": {
+    "com.openai": {
+      "interface": {
+        "displayName": "agentcosplay",
+        "shortDescription": "选一个角色，开始自然对话。",
+        "longDescription": "安装后可在当前对话中创建和扮演角色。未连接记忆后端时只使用当前对话上下文；不需要额外服务即可开始聊天。",
+        "developerName": "luoyi0000000",
+        "category": "Productivity",
+        "capabilities": [],
+        "websiteURL": "https://github.com/luoyi0000000/agentcosplay",
+        "defaultPrompt": [
+          "用 agentcosplay 创建一个角色，陪我聊聊。",
+          "用 agentcosplay 扮演我指定的人物。"
+        ]
+      }
+    }
+  }
+}

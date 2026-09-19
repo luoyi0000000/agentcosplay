@@ -1,8 +1,10 @@
-# MCP 与平台适配
+# agentcosplay 高级持久记忆接入
+
+普通角色对话直接安装 Skill 即可，无需阅读本页。本页面向需要部署独立记忆服务的维护者；当前不包含可供公众连接的托管服务。安装入口见 [README](../README.md) 和 [skills.md](../skills.md)。
 
 ## 同一后端，不复制数据库
 
-所有平台使用同一组工具和规则；自然语言理解由宿主模型负责。连接 MCP 后还要让宿主应用 `skills/character-runtime/SKILL.md`。只有连接而没有每轮 workflow，无法保证持续加载角色和自动记忆。
+所有平台使用同一组工具和规则；自然语言理解由宿主模型负责。连接 MCP 后还要让宿主应用 `plugins/agentcosplay/skills/agentcosplay/SKILL.md`。只有连接而没有每轮 workflow，无法保证持续加载角色和自动记忆。
 
 | 工具 | 职责 |
 |---|---|
@@ -46,9 +48,9 @@ token 可本地生成：`uv run --locked python -c "import secrets; print(secret
 
 ## ChatGPT、移动端与远程 OAuth
 
-当前官方文档的可移植插件根为 `plugin.json`，Skill 在 `skills/`；兼容 `.codex-plugin/plugin.json` 提供 Codex 显示元数据。ChatGPT 需在账号/工作区允许的环境注册远程 MCP，移动端使用账号可用的插件；Desktop-only 能力不作为前提。这里没有伪造远程注册 ID，也没有把本地 stdio 冒充手机连接。
+当前官方文档的可移植插件根为 `plugin.json`，Skill 在 `skills/`；兼容 `.codex-plugin/plugin.json` 提供 Codex 显示元数据；两者位于 `plugins/agentcosplay/`。ChatGPT 需在账号/工作区允许的环境注册远程 MCP，移动端使用账号可用的插件；Desktop-only 能力不作为前提。这里没有伪造远程注册 ID，也没有把本地 stdio 冒充手机连接。
 
-**本次交付到此为止，不运行下列远程步骤。** 获得用户明确授权后：
+以下是维护者接入真实服务的步骤，当前未部署；服务地址与身份系统准备完成后执行：
 
 1. 在获准环境运行同一 HTTP 服务和服务端持久卷；客户端设备不需要 SQLite 或本机常驻进程。
 2. 配置已有 OAuth 身份提供方，签发 RS256 JWT（含 iss/sub/aud/iat/exp、`character:access` scope），并提供 HTTPS JWKS。需要为实际宿主配置可用的客户端注册/授权流程，资源服务器不替身份提供方完成这些工作。
@@ -56,7 +58,7 @@ token 可本地生成：`uv run --locked python -c "import secrets; print(secret
 4. 根据当时官方规范创建/绑定实际远程 MCP 连接，再填真实注册产物；测试登录、刷新/过期、权限拒绝、手机重启、跨设备同角色与不同身份隔离。不要把这里的占位域名当成已部署服务。
 5. 在 ChatGPT/Codex 真正运行自然语言角色闭环；验证遗漏调用、OOC、重试与退出行为。
 
-ChatGPT 原生 Memory 不参与核心存储，也没有未经证实的写入适配器。远程 URL 和 Plugin 注册会涉及外部写入，属于用户审计通过后的阶段。当前结果不能证明具体账号/手机兼容性。
+ChatGPT 原生 Memory 不参与核心存储，也没有未经证实的写入适配器。远程 URL、身份注册和托管服务需单独配置。当前结果不能证明具体账号/手机兼容性。
 
 ## 核验过的官方资料
 

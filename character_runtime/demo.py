@@ -168,7 +168,7 @@ async def run(folder: Path) -> None:
 def main() -> None:
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8")
-    print("Character Runtime：确定性协议/状态演示（台词与候选不是模型生成）")
+    print("agentcosplay：确定性协议/状态演示（台词与候选不是模型生成）")
     with tempfile.TemporaryDirectory(prefix="character-runtime-demo-") as folder:
         asyncio.run(run(Path(folder) / "角色 data"))
 

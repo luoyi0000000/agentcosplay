@@ -1,4 +1,6 @@
-# Character Runtime Implementation Plan
+# agentcosplay Implementation Plan
+
+> 本文保留初版设计/验证历史，不代表当前发布入口或托管状态。最新分发说明见 [distribution.md](distribution.md)。
 
 > For agentic workers: 使用 Superpowers 的测试驱动与逐阶段验证流程执行；上下游紧密耦合时在本任务内顺序实现。用户已授权本地开发，只有核心冲突和远程操作需要再询问。
 
@@ -57,7 +59,7 @@
 
 ## Task 5: MCP、Skill 与适配说明
 
-文件：`server.py`、`cli.py`、`skills/character-runtime/SKILL.md`、`adapters/`、`tests/test_mcp.py`。
+文件：`server.py`、`cli.py`、`plugins/agentcosplay/skills/agentcosplay/SKILL.md`、`adapters/`、`tests/test_mcp.py`。
 
 - [x] 用官方 SDK Client 调用真实 stdio/HTTP 服务；先写发现工具、角色操作、schema 错误、认证拒绝的失败测试。
 - [x] 精简工具职责，严格 schema 与注解；identity 来自进程配置或已验证 token，不允许模型任意选择 owner。
