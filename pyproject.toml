@@ -4,12 +4,13 @@ build-backend = "hatchling.build"
 
 [project]
 name = "agentcosplay"
-version = "1.0.1"
+version = "1.1.0"
 description = "Platform-neutral character state and memory runtime"
 requires-python = ">=3.11"
 dependencies = [
   "pydantic>=2.12,<3", "mcp==2.2.0", "pyjwt[crypto]>=2.14,<3",
   "uvicorn>=0.53,<1", "starlette>=1.6,<2",
+  "pyyaml>=6.0.3", "tomlkit==0.15.1",
 ]
 
 [project.scripts]

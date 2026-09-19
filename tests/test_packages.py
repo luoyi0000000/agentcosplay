@@ -81,3 +81,39 @@ class PackageTests(RuntimeFixture):
                 with self.assertRaises(ValueError):
                     import_character(self.rt, package)
                 self.assertEqual(len(self.rt.characters.list()), before)
+
+    def test_migration_to_separate_runtime_preserves_state_and_selected_memories(self):
+        import tempfile
+        from pathlib import Path
+
+        from character_runtime.runtime import Runtime
+        from character_runtime.storage import SQLiteStorage
+
+        self.rt.memory.store(self.a.id, Candidate(content="可选迁移的角色经历", importance=0.9))
+        state = self.rt.characters.state(self.a.id)
+        state.relationship.trust = "medium"
+        state.evolution = [
+            Evolution(
+                axis="personality",
+                key="patience",
+                value="更耐心",
+                portable_summary="更耐心",
+                evidence_ids=[],
+                at_turn=2,
+            )
+        ]
+        self.rt.characters.save_state(state)
+        default = export_character(self.rt, self.a.id)
+        self.assertNotIn("可选迁移的角色经历", default.model_dump_json())
+        full = export_character(self.rt, self.a.id, include_memories=True)
+        with tempfile.TemporaryDirectory() as folder:
+            store = SQLiteStorage(Path(folder) / "other-host/runtime.sqlite3")
+            try:
+                target = Runtime(store, "different-local-owner")
+                clone = import_character(target, full.model_dump(mode="json"))
+                self.assertNotEqual(clone.id, self.a.id)
+                self.assertEqual(target.characters.state(clone.id).relationship.trust, "medium")
+                self.assertEqual(target.characters.state(clone.id).evolution[0].value, "更耐心")
+                self.assertEqual(target.memory.recall(clone.id)[0].content, "可选迁移的角色经历")
+            finally:
+                store.close()

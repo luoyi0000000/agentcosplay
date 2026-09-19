@@ -1,6 +1,6 @@
 # agentcosplay 高级持久记忆接入
 
-普通角色对话直接安装 Skill 即可，无需阅读本页。本页面向需要部署独立记忆服务的维护者；当前不包含可供公众连接的托管服务。安装入口见 [README](../README.md) 和 [skills.md](../skills.md)。
+完整本地安装见 [INSTALL](../INSTALL.md)，自动安装 Runtime、原生配置和 Skill。本页说明高级工具与远程自托管，不要求作者提供托管服务。安装入口见 [README](../README.md) 和 [skills.md](../skills.md)。
 
 ## 同一后端，不复制数据库
 
@@ -25,7 +25,7 @@
 
 `uv run --locked python -m character_runtime serve --transport stdio`
 
-服务端从环境读取 `CHARACTER_DATA_DIR`（默认 `data`）、`CHARACTER_OWNER`（默认 `local-user`）。stdio 的安全边界是能启动进程与访问数据目录的本机用户，不能给不可信客户端共享任意 owner 配置。
+服务端从环境读取 `CHARACTER_DATA_DIR`（默认系统用户数据目录下 `agentcosplay/characters`，不再使用源码内 `data`）、`CHARACTER_OWNER`（默认 `local-user`）。stdio 的安全边界是能启动进程与访问数据目录的本机用户，不能给不可信客户端共享任意 owner 配置。
 
 - Codex：`adapters/codex.example.toml`，替换绝对路径；路径可以含中文/空格。Windows 用 `C:/Projects/...`，无需 WSL。
 - Hermes：`adapters/hermes.example.yaml`，并在其指令机制应用同一 Skill 工作流。

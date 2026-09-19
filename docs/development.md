@@ -2,7 +2,7 @@
 
 ## 环境与命令
 
-本页只面向后端开发者；普通用户通过 marketplace 或 skills.md 安装即可。
+本页只面向后端开发者；完整安装见 INSTALL.md；Agent 入口是 skills.md。Marketplace 单独安装仅提供对话规则。
 
 Python >=3.11，uv；不需要 Node、Homebrew、Bash 或 WSL。macOS/Windows/Linux 使用同样的 Python/uv 命令；路径用 pathlib。此版本实际在 macOS arm64 / Python 3.11.15 验证，Windows/Linux 尚未实机验证。
 
@@ -15,6 +15,7 @@ uv run --locked mypy character_runtime
 uv run --locked python -m character_runtime.demo
 uv run --locked python -m scripts.schemas
 uv run --locked python -m scripts.build_distribution
+uv run --locked python -m scripts.check_installation
 uv build --build-constraints build-constraints.txt
 ```
 
@@ -32,7 +33,7 @@ stdlib unittest 覆盖类型约束、所有者与角色隔离、来源优先级�
 
 `python -m scripts.schemas` 根据 Pydantic 重新生成四份公开契约；Schema 漂移测试保证契约和代码一致。示例角色卡只用合成身份。
 
-Plugin 位于 `plugins/agentcosplay/`，portable manifest 与 `.codex-plugin/plugin.json` 提供分发元数据。Skill 可独立执行当前会话角色对话；存在已连接后端时加载持久运行规则。仓库 marketplace 由 `.agents/plugins/marketplace.json` 提供。此环境已使用官方 Plugin Creator 和 Skill Creator 自带验证脚本，报告记录结果；脚本属于开发者环境，不作为本仓库运行依赖。PyYAML 是它们需要的开发依赖。
+Plugin 位于 `plugins/agentcosplay/`，portable manifest 与 `.codex-plugin/plugin.json` 提供分发元数据。Skill 可独立执行当前会话角色对话；存在已连接后端时加载持久运行规则。仓库 marketplace 由 `.agents/plugins/marketplace.json` 提供。此环境已使用官方 Plugin Creator 和 Skill Creator 自带验证脚本，报告记录结果；脚本属于开发者环境，不作为本仓库运行依赖。PyYAML 同时用于 Hermes 原生配置合并，tomlkit 用于保留 Codex TOML 注释。
 
 ## 变更流程
 

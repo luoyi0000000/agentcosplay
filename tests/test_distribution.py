@@ -48,7 +48,7 @@ class DistributionTests(unittest.TestCase):
             env = dict(os.environ, PATH=f"{bin_dir}:" + os.environ["PATH"])
             env["TEST_ARCHIVE"] = str(ROOT / "downloads/agentcosplay-skill.zip")
             dest = temp / "中文 skills"
-            command = ["bash", str(ROOT / "install.sh"), "--skills-dir", str(dest)]
+            command = ["bash", str(ROOT / "install-skill.sh"), "--skills-dir", str(dest)]
 
             def run(**values):
                 return subprocess.run(
@@ -79,7 +79,7 @@ class DistributionTests(unittest.TestCase):
             external.mkdir()
             (temp / "agentcosplay").symlink_to(external, target_is_directory=True)
             result = subprocess.run(
-                ["bash", str(ROOT / "install.sh"), "--skills-dir", str(temp)],
+                ["bash", str(ROOT / "install-skill.sh"), "--skills-dir", str(temp)],
                 capture_output=True,
             )
             self.assertNotEqual(result.returncode, 0)

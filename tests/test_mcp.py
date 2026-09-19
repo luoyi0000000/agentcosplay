@@ -140,3 +140,69 @@ class MCPTests(unittest.IsolatedAsyncioTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SharedRuntimeTests(unittest.IsolatedAsyncioTestCase):
+    async def test_two_gateway_clients_share_one_runtime_bidirectionally(self):
+        from contextlib import AsyncExitStack
+
+        from character_runtime.demo import call
+
+        with tempfile.TemporaryDirectory() as folder:
+            store = SQLiteStorage(Path(folder) / "one-runtime.sqlite3")
+            try:
+                server = build_server(store, local_owner="same-user", token="s" * 40)
+                app = http_app(server)
+                async with app.router.lifespan_context(app), AsyncExitStack() as stack:
+                    clients = []
+                    # Independent HTTP connections and conversation IDs; one app/store, no sync.
+                    for gateway in ("hermes-entry", "astrbot-entry"):
+                        http = await stack.enter_async_context(
+                            httpx2.AsyncClient(
+                                transport=httpx2.ASGITransport(app=app),
+                                headers={"Authorization": "Bearer " + "s" * 40},
+                            )
+                        )
+                        clients.append(
+                            await stack.enter_async_context(
+                                Client(
+                                    streamable_http_client(
+                                        "http://127.0.0.1:8765/mcp", http_client=http
+                                    )
+                                )
+                            )
+                        )
+                    a, b = clients
+                    character = await call(
+                        a,
+                        "character_write",
+                        request={"action": "create", "definition": {"name": "共享合成角色"}},
+                    )
+                    for client, session in zip(
+                        clients, ("hermes-entry", "astrbot-entry"), strict=True
+                    ):
+                        await call(
+                            client,
+                            "session_control",
+                            request={
+                                "action": "open",
+                                "session_id": session,
+                                "character_id": character["id"],
+                            },
+                        )
+                    for writer, session, reader, other, content in (
+                        (a, "hermes-entry", b, "astrbot-entry", "来自入口 A 的合成记忆"),
+                        (b, "astrbot-entry", a, "hermes-entry", "来自入口 B 的合成记忆"),
+                    ):
+                        await call(
+                            writer,
+                            "turn_commit",
+                            session_id=session,
+                            turn_id="1",
+                            candidates=[{"content": content, "importance": 0.9}],
+                        )
+                        context = await call(reader, "runtime_context", session_id=other)
+                        self.assertIn(content, [m["content"] for m in context["memories"]])
+                    self.assertEqual(len(store.list("same-user", "definition")), 1)
+            finally:
+                store.close()

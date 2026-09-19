@@ -1,11 +1,13 @@
 """Cross-platform local entry point. No networking occurs unless serve HTTP is requested."""
 
 import argparse
+import asyncio
+import json
 import os
-from pathlib import Path
 
 import uvicorn
 
+from .paths import runtime_data_dir
 from .server import build_server, http_app
 from .storage import SQLiteStorage
 
@@ -15,8 +17,14 @@ def main() -> None:
     sub = parser.add_subparsers(dest="command", required=True)
     serve = sub.add_parser("serve")
     serve.add_argument("--transport", choices=["stdio", "http"], default="stdio")
+    sub.add_parser("doctor", help="Verify storage and real MCP discovery without user records")
     args = parser.parse_args()
-    data = Path(os.environ.get("CHARACTER_DATA_DIR", "data"))
+    data = runtime_data_dir()
+    if args.command == "doctor":
+        from .health import check
+
+        print(json.dumps(asyncio.run(check(data)), ensure_ascii=False))
+        return
     storage = SQLiteStorage(data / "runtime.sqlite3")
     try:
         owner = os.environ.get("CHARACTER_OWNER", "local-user")

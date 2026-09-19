@@ -1,62 +1,62 @@
 # agentcosplay
 
-选一个角色，开始聊天。
+让 Agent 持续作为你选择的人物交流。角色有独立设定、关系、记忆和成长；表达自然、少套话，句尾语气随性格与情绪变化。
 
-agentcosplay 让 Agent 按人物的身份、性格、经历和关系自然说话：少套话，保留事实，语气词随性格而变。支持原创人物、原作人物、平行世界设定、切换角色和 OOC。
+**1.1.0 · 本地运行，人物数据归你。** 完整安装包含 Runtime、持久化存储、宿主适配和角色 Skill。无需作者提供云服务；模型与聊天渠道由你正在使用的 Agent 提供。
 
-**1.0.1 · 安装即可开始当前会话的角色对话。** 不需要 API Key、终端操作或自行启动服务。当前没有托管记忆服务，跨会话保存与跨设备同步尚未随插件启用。
+## 让 Agent 安装
 
-## 在 ChatGPT / Codex 的插件页安装
+把整个仓库链接发给有文件和执行权限的 Codex、Hermes 或 AstrBot 管理 Agent：
 
-将此仓库添加为 marketplace 来源：
+> 安装这个项目：https://github.com/luoyi0000000/agentcosplay 。识别当前宿主，安装完整 Runtime 和角色规则，验证持久记忆，再带我创建角色。
 
-**https://github.com/luoyi0000000/agentcosplay**
+也可以使用可直接读取的安装入口：
 
-选择 **agentcosplay → 安装**，在新会话选中插件，然后说：
+> 根据 https://raw.githubusercontent.com/luoyi0000000/agentcosplay/main/skills.md 为我安装 agentcosplay，包括本地 Runtime、当前平台适配和全部 Skills，并验证安装成功。
 
-> 扮演一个安静、可靠的灯塔守望者，叫林舟。今天有点累，陪我聊会儿。
+Agent 会使用与人工安装相同的安装器。只有聊天权限的机器人不能替你修改宿主，需要在实际运行它的机器或管理界面操作。
 
-如果你是 ChatGPT 工作区管理员，在 **Admin → Plugins → Add → Import marketplace** 填入上面的仓库地址，Path 留空，导入后向成员开放。成员从插件页安装即可。没有该管理入口时，用下方 Agent 安装方式。
+## 自己安装
 
-仓库已提供官方格式的 marketplace 文件；这不代表已经收录进 OpenAI 公开插件目录，也不保证每个账号都有导入权限。[平台安装规则](https://learn.chatgpt.com/docs/enterprise/plugin-management)。
-
-## 让 Agent 帮你装（推荐）
-
-把下面一句发给 Hermes、AstrBot 或其他支持 Skills 的 Agent：
-
-> 根据 https://raw.githubusercontent.com/luoyi0000000/agentcosplay/main/skills.md 为我安装 agentcosplay 的全部 skills。请识别当前平台，完成安装和可用性检查，然后带我创建一个角色开始对话。
-
-不需要理解内部配置。[skills.md](skills.md) 会告诉 Agent 如何使用当前平台的安装机制、保留已有配置并验证是否加载。当前包含一个完整 Skill：`agentcosplay`。
-
-Hermes 可使用其原生 Skill 安装机制。AstrBot 用户也可以直接[下载技能包](https://raw.githubusercontent.com/luoyi0000000/agentcosplay/main/downloads/agentcosplay-skill.zip)，在 **插件 → 技能 → 上传技能** 中导入并启用；若人格配置只允许指定 Skills，把 `agentcosplay` 加入列表。
-
-### 可选：单行安装
-
-给有终端的 Agent 使用，支持 macOS / Linux；自动识别单一 Hermes 或 Codex 安装：
+需要 **Python 3.11+、Git 和可下载依赖的网络**。在 Runtime 宿主执行，以下示例选择 Codex；Hermes 将 `codex` 换成 `hermes`：
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/luoyi0000000/agentcosplay/main/install.sh | bash
+git clone https://github.com/luoyi0000000/agentcosplay.git
+cd agentcosplay
+python3 install.py --host codex
+python3 install.py doctor
 ```
 
-安装器只下载校验后的 Skill，不安装服务、不修改其他插件。多宿主、AstrBot 或自定义目录交给上面的自然语言安装指令处理。安装后宿主可能需要开启新会话才会加载。
+Windows 使用 `py -3` 代替 `python3`，不需要 WSL。安装器自动准备独立依赖、合并配置并验证协议；随后重新加载宿主。AstrBot、容器、更新/回滚/卸载见 [INSTALL.md](INSTALL.md)。
 
-## 怎么聊
+可选的 macOS / Linux 快捷入口：
 
-- “用你自己的方式说话，别每句话都加同一个语气词。”
-- “进入 OOC，把称呼改一下；改好后回到角色。”
-- “换成另一个角色，之前的私人经历不要共享给他。”
-- “这段代码先用普通语气讲，讲完再恢复角色。”
-- “把角色设定整理出来，方便我下次粘贴接着聊。”
+```bash
+curl -fsSL https://raw.githubusercontent.com/luoyi0000000/agentcosplay/main/install.sh | bash -s -- --host hermes
+```
 
-当前会话内可以维持角色和经历；上下文丢失后不会编造回忆。手动导出的设定文本可以带到新会话，但不是自动长期记忆。原有持久记忆引擎仍在仓库中，连接真实后端后才启用保存、隔离、成长和迁移能力。
+这会下载并执行仓库安装代码；需要先审查时，请使用上面的 clone 路线。
 
-## 项目与文档
+## 数据与跨设备
 
-- [Agent 安装入口](skills.md)
-- [Marketplace 清单](.agents/plugins/marketplace.json)
-- [插件与角色规则](plugins/agentcosplay/skills/agentcosplay/SKILL.md)
-- [分发格式与发布状态](docs/distribution.md)
-- [数据与隐私契约](docs/reference.md)
-- [开发与测试](docs/development.md) · [高级持久记忆接入](docs/adapters.md)
+人物数据默认放在操作系统用户数据目录，与源码和程序安装目录分离。卸载程序保留人物数据。更新不会清空记忆，也不改变身份；版本不兼容时拒绝打开数据库。
 
-角色扮演不会授权工具操作、伪造 AI 身份或将虚构经历写入真实用户记忆。数据库和密钥不包含在安装包中。
+手机 QQ、电脑等渠道通过 **Hermes / AstrBot / Gateway** 使用 Runtime 主机上的同一份人物数据。主机可以是你的电脑或 VPS。多个 Gateway 接同一进程的方法见 [共享 Runtime](INSTALL.md#多个入口连接同一个-runtime)。这不是把数据库同步到每台设备，也不取决于模型是否相同。
+
+角色迁移通过导出包 → 导入完成。默认不导出聊天记忆；明确选择后才包含角色记忆，真实用户记忆仍被排除。详见 [数据契约](docs/reference.md)。
+
+## ChatGPT / Codex 插件页
+
+仓库提供官方格式的 [marketplace 清单](.agents/plugins/marketplace.json)。可添加此仓库为来源，选择 agentcosplay 安装；有权限的 ChatGPT 工作区管理员可从 **Admin → Plugins → Add → Import marketplace** 导入仓库，Path 留空。
+
+**仅从 marketplace 安装的是角色对话规则。** 没有可访问的 Runtime 时，只能维持当前会话，不能声称开启了长期记忆。ChatGPT 云端不能直接访问你电脑的 stdio 或回环地址；手机连续对话优先通过已有 Gateway。仓库不提供作者托管服务，也不保证每个账号都有导入权限或已经公开上架。[平台安装规则](https://learn.chatgpt.com/docs/enterprise/plugin-management)。
+
+AstrBot 的可选[对话 Skill ZIP](https://raw.githubusercontent.com/luoyi0000000/agentcosplay/main/downloads/agentcosplay-skill.zip) 也不是完整 Runtime 安装。
+
+## 开始聊天
+
+> 扮演林舟，一个安静、可靠的灯塔守望者。今天有点累，陪我聊会儿。
+
+支持创建和切换人物、OOC 修改设定、按实际互动发展关系。切换人物不共享私人经历；普通技术任务可以临时退出人物口吻。不会为沉浸感伪造共同经历、现实行动或 AI 身份。
+
+[安装与排障](INSTALL.md) · [Agent 入口](skills.md) · [适配与工具](docs/adapters.md) · [验收及问题修复](docs/installation-audit.md) · [开发](docs/development.md)

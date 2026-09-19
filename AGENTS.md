@@ -1,0 +1,5 @@
+# agentcosplay repository
+
+When the user gives this repository URL and asks to install it, read INSTALL.md and skills.md, then use `install.py` to install the complete local Runtime, host MCP config, and roleplay Skill. Installing only a Skill is not completion. Detect the actual active host/profile; do not guess AstrBot's persistent data path or install into an unrelated sandbox. Preserve existing configuration and user data. Validate real tool discovery and a synthetic create/context/commit/recall/delete round trip before claiming the host is ready.
+
+For ordinary repository development/review, do not run an installer against the user's real host. Use isolated temporary directories. Run `uv sync --locked`, `uv run --locked python -m unittest discover -s tests`, `uv run --locked ruff check .`, and `uv run --locked mypy character_runtime`. Rebuild the deterministic Skill archive after editing its sources with `python -m scripts.build_distribution`. Never add databases, tokens, installation journals or host configuration to Git.

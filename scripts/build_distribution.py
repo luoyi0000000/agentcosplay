@@ -20,7 +20,7 @@ def main() -> None:
                 info.external_attr = 0o100644 << 16
                 archive.writestr(info, file.read_bytes())
     digest = hashlib.sha256(output.read_bytes()).hexdigest()
-    installer = ROOT / "install.sh"
+    installer = ROOT / "install-skill.sh"
     content, count = re.subn(
         r'^expected_sha256="[^"]*"$',
         f'expected_sha256="{digest}"',
