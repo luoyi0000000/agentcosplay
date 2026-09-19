@@ -1,15 +1,15 @@
 {
   "name": "character-runtime",
-  "version": "0.1.0",
-  "description": "Persistent character runtime workflow backed by a separately connected MCP service.",
+  "version": "1.0.0",
+  "description": "Formal platform-neutral character runtime workflow backed by a separately connected MCP service.",
   "author": {
     "name": "Local developer"
   },
   "skills": "./skills/",
   "interface": {
     "displayName": "Character Runtime",
-    "shortDescription": "Portable characters and isolated roleplay memory.",
-    "longDescription": "Use the shared Character Runtime MCP backend for character identity, state, memory and migration. Backend connection required.",
+    "shortDescription": "Portable characters with isolated roleplay memory.",
+    "longDescription": "Use the shared Character Runtime MCP backend for character identity, state, memory, growth and migration. Backend connection required.",
     "developerName": "Local developer",
     "category": "Productivity",
     "capabilities": [

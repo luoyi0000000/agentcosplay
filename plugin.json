@@ -1,7 +1,12 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "character-runtime",
-  "version": "0.1.0",
-  "description": "Persistent, portable character definitions, state and isolated roleplay memory.",
-  "keywords": ["character", "roleplay", "memory", "mcp"]
+  "version": "1.0.0",
+  "description": "Platform-neutral AI character runtime with portable definitions, isolated state, memory and MCP adapters.",
+  "keywords": [
+    "character",
+    "roleplay",
+    "memory",
+    "mcp"
+  ]
 }

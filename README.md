@@ -1,75 +1,102 @@
 # Character Runtime
 
-平台无关的角色持久运行时。角色定义、当前状态、记忆分开存储，宿主模型负责理解与表达，Runtime 负责隔离、生命周期、状态转换和迁移。Python 3.11+，SQLite，官方 MCP Python SDK 2.2.0；没有模型 API Key 或网页后台前置要求。
+平台无关的 AI Character Runtime。它把**角色定义、角色状态、长期记忆、关系成长和运行规则**从具体模型与客户端中分离出来，让同一个角色可以在 Codex、ChatGPT、Hermes、AstrBot 或自建 Agent 中持续运行。
 
-**本地审计版本 0.1.0。尚未上传、发布或部署。** 中断点追加复核与修复见 [问题清单](docs/interruption-review.md)。 ChatGPT 手机是远程接入目标；交付了认证 HTTP 后端与接入说明，尚未在手机/真实 OAuth 提供方上完成端到端验收。
+当前正式版本：`1.0.0`。项目使用 Python 3.11+、SQLite 和官方 MCP Python SDK；不绑定模型供应商，不要求模型 API Key，也不把角色数据写进宿主客户端的专有格式。
 
-## 立即运行本地演示
+## Agent 一键安装
 
-安装 Python 3.11+ 与 [uv](https://docs.astral.sh/uv/getting-started/installation/)，进入本目录：
+在 Agent 的项目终端执行以下命令：
 
-```text
+```bash
+set -euo pipefail
+git clone https://github.com/luoyi0000000/agentcosplay.git character-runtime
+cd character-runtime
+command -v python3 >/dev/null || { echo "需要 Python 3.11+" >&2; exit 1; }
+python3 - <<'PY'
+import sys
+if sys.version_info < (3, 11):
+    raise SystemExit("需要 Python 3.11+")
+PY
+command -v uv >/dev/null || { echo "未找到 uv：https://docs.astral.sh/uv/getting-started/installation/" >&2; exit 1; }
 uv sync --locked --python 3.11
-uv run --locked python -m character_runtime.demo
+uv run --locked python -m unittest discover -s tests -q
 ```
 
-演示使用真实 MCP stdio 客户端和两个独立服务进程，验证创建、持久化、重启召回、角色隔离、OOC/任务恢复、记忆提升、导入导出、遗忘。数据全部为合成内容，运行后临时数据库自动删除。它是确定性协议/状态演示，不调用 LLM，也不把固定候选当作模型判断。[本次实际演示记录](docs/demo.md)另列当前助手参与的角色对话。
+启动本地 MCP stdio 服务：
 
-## 连接宿主开始角色对话
+```bash
+cd character-runtime
+export CHARACTER_OWNER="local-user"
+export CHARACTER_DATA_DIR="$PWD/private-data"
+uv run --locked python -m character_runtime serve --transport stdio
+```
 
-1. 按 [adapters/codex.example.toml](adapters/codex.example.toml) 配置本地 MCP，替换项目与私有数据目录路径。服务命令为 `uv run --locked python -m character_runtime serve --transport stdio`。
-2. 将 [角色工作流 Skill](skills/character-runtime/SKILL.md) 加入宿主支持的 Skill/指令机制，或在支持的客户端加载本地 Plugin 包。此仓库没有修改你的全局配置。
-3. 对宿主说：“创建一个安静、可靠的灯塔守望者，叫林舟；今后这个对话使用他。”宿主创建并激活角色，每轮读取上下文、提交有价值记忆。
-4. 后续可说“进入 OOC”“改称呼”“删除这条记忆”“本次任务用中性模式，完成后恢复”“导出角色，不含记忆”。也可使用 [结构化示例](examples/original-character.json) 创建角色。
+给 Agent 的 MCP 配置（替换为绝对路径）：
 
-插件只打包规则，需另外连接 MCP 后端；仅装 Skill 不会产生持久化。端点与账号注册信息不会伪造。ChatGPT/Hermes/AstrBot 和跨设备接入见 [适配文档](docs/adapters.md)。
+```json
+{
+  "command": "uv",
+  "args": ["--directory", "/absolute/path/to/character-runtime", "run", "--locked", "python", "-m", "character_runtime", "serve", "--transport", "stdio"],
+  "env": {
+    "CHARACTER_OWNER": "local-user",
+    "CHARACTER_DATA_DIR": "/absolute/path/to/private-character-data"
+  }
+}
+```
 
-## 结构与架构
+安装 Skill 后，对 Agent 说：“创建一个安静、可靠的灯塔守望者，叫林舟；今后这个对话使用他。”之后可说“进入 OOC”“删除这条记忆”“导出角色，不含记忆”“本次任务用中性模式，完成后恢复”。
+
+## 远程 HTTP 接入
+
+移动端或远程 Agent 必须访问认证后的 HTTPS MCP 服务。生产环境不能使用示例 token，也不能把 SQLite 文件暴露给客户端：
+
+```bash
+export CHARACTER_HOST="0.0.0.0"
+export CHARACTER_PORT="8765"
+export CHARACTER_OAUTH_ISSUER="https://identity.example.com"
+export CHARACTER_OAUTH_AUDIENCE="https://runtime.example.com/mcp"
+export CHARACTER_OAUTH_JWKS_URL="https://identity.example.com/.well-known/jwks.json"
+export CHARACTER_RESOURCE_URL="https://runtime.example.com/mcp"
+uv run --locked python -m character_runtime serve --transport http
+```
+
+认证、所有者隔离和 Host 校验见 [适配文档](docs/adapters.md)。
+
+## 项目结构
 
 ```text
-character_runtime/
-  models.py                 Definition / State / Memory / Package
-  characters.py runtime.py  来源优先级、会话、模式、原子回合
-  memory.py growth.py       命名空间、生命周期、循证成长
-  packages.py storage.py    可迁移 JSON、事务 Storage / SQLite
-  server.py auth.py cli.py  MCP、认证、跨平台入口
-  demo.py                   可重复的真实协议演示
-skills/character-runtime/   宿主自然语言角色工作流
-adapters/                  Codex / Hermes / AstrBot 配置示例
-schemas/ examples/         版本化契约与原创角色卡
-scripts/ tests/ docs/      Schema 生成、测试与说明
-plugin.json .codex-plugin/ 分发元数据
+character_runtime/          核心运行时、存储、MCP、认证和 CLI
+skills/character-runtime/   Agent 角色工作流 Skill
+adapters/                   Codex、Hermes、AstrBot 配置示例
+schemas/                    CharacterDefinition/State/Memory/Package v1 契约
+examples/                   可导入的原创角色示例
+tests/                      单元、协议、并发、权限和隐私测试
+docs/                       设计、适配、审计、开发和演示文档
+plugin.json                 Plugin 分发元数据
 ```
 
-```mermaid
-flowchart TD
-  H[ChatGPT / Codex / Hermes / AstrBot] --> M[Skill 与 MCP Adapter]
-  M --> R[Runtime：身份、会话、模式、回合事务]
-  R --> D[Character Definition]
-  R --> S[Character State]
-  R --> N[Character Memory]
-  D --> P[Storage 协议]
-  S --> P
-  N --> P
-  P --> DB[(服务端 SQLite)]
-```
+宿主是 Adapter，不是核心。角色数据按所有者和角色 ID 隔离；默认导出不包含记忆；现实用户事实不能从角色扮演内容自动提升；成长需要明确证据。MCP 工具不会强制模型每轮调用，因此宿主必须遵循 Skill 工作流。
 
-核心不导入 MCP；所有宿主使用同一模型和后端。手机只访问认证 HTTP 服务，不读取开发机文件。SQLite 是可替换的服务端 Storage 实现。
+## 验证、演示与构建
 
-## 验证与文档
-
-```text
+```bash
 uv run --locked python -m unittest discover -s tests -v
 uv run --locked ruff check .
 uv run --locked ruff format --check .
 uv run --locked mypy character_runtime
+uv run --locked python -m character_runtime.demo
+uv run --locked python -m scripts.schemas
 uv build --build-constraints build-constraints.txt
 ```
 
-- [设计与官方依据](docs/design.md)：技术选择、架构、来源优先级、平台机制。
-- [数据与隐私契约](docs/reference.md)：Schema、Memory、成长、版本迁移、安全边界。
-- [适配与运行配置](docs/adapters.md)：10 个 MCP 工具、认证、各平台接入。
-- [开发与测试](docs/development.md)：构建、Schema、清理、跨平台验证状态。
-- [实际演示](docs/demo.md)与[审计报告](docs/audit.md)：已验证内容、限制与审计清单。
+- [系统设计](docs/design.md)
+- [数据、记忆与隐私契约](docs/reference.md)
+- [平台适配与认证](docs/adapters.md)
+- [本地演示记录](docs/demo.md)
+- [安全审计报告](docs/audit.md)
+- [开发与发布流程](docs/development.md)
 
-V1 的自动提取、角色表现和真实用户授权识别依赖宿主遵守工作流；MCP 不会强制模型每轮调工具。成长默认缓慢，角色之间默认不共享，现实记忆必须显式提升，导出默认无 Memory。详见数据契约，不把这些机制宣传为完全自动或无条件隐私保证。
+## 发布边界
+
+仓库不包含 `.env`、token、数据库、构建目录或缓存。远程部署、OAuth 注册、域名和公网服务不由本仓库自动创建；请在自己的基础设施中完成并审计后再启用。
