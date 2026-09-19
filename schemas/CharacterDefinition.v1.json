@@ -1,0 +1,171 @@
+{
+  "$defs": {
+    "Fact": {
+      "additionalProperties": false,
+      "properties": {
+        "value": {
+          "maxLength": 4000,
+          "minLength": 1,
+          "title": "Value",
+          "type": "string"
+        },
+        "source_type": {
+          "default": "inferred",
+          "enum": [
+            "user_explicit",
+            "user_material",
+            "official",
+            "wiki",
+            "model",
+            "inferred"
+          ],
+          "title": "Source Type",
+          "type": "string"
+        },
+        "reference": {
+          "default": "",
+          "maxLength": 2000,
+          "title": "Reference",
+          "type": "string"
+        },
+        "confidence": {
+          "default": 0.5,
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Confidence",
+          "type": "number"
+        },
+        "canon_status": {
+          "default": "inferred",
+          "enum": [
+            "canon",
+            "user_defined",
+            "unverified",
+            "inferred"
+          ],
+          "title": "Canon Status",
+          "type": "string"
+        }
+      },
+      "required": [
+        "value"
+      ],
+      "title": "Fact",
+      "type": "object"
+    },
+    "GrowthPolicy": {
+      "additionalProperties": false,
+      "properties": {
+        "personality_mutability": {
+          "default": "low",
+          "enum": [
+            "low",
+            "medium",
+            "high"
+          ],
+          "title": "Personality Mutability",
+          "type": "string"
+        },
+        "relationship_mutability": {
+          "default": "medium",
+          "enum": [
+            "low",
+            "medium",
+            "high"
+          ],
+          "title": "Relationship Mutability",
+          "type": "string"
+        },
+        "world_state_mutability": {
+          "default": "low",
+          "enum": [
+            "low",
+            "medium",
+            "high"
+          ],
+          "title": "World State Mutability",
+          "type": "string"
+        }
+      },
+      "title": "GrowthPolicy",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": 1,
+      "default": 1,
+      "title": "Schema Version",
+      "type": "integer"
+    },
+    "id": {
+      "maxLength": 200,
+      "minLength": 1,
+      "title": "Id",
+      "type": "string"
+    },
+    "name": {
+      "maxLength": 100,
+      "minLength": 1,
+      "title": "Name",
+      "type": "string"
+    },
+    "origin": {
+      "default": "original",
+      "enum": [
+        "original",
+        "ip"
+      ],
+      "title": "Origin",
+      "type": "string"
+    },
+    "mode": {
+      "default": "au",
+      "enum": [
+        "canon",
+        "au",
+        "inspired"
+      ],
+      "title": "Mode",
+      "type": "string"
+    },
+    "facts": {
+      "additionalProperties": {
+        "$ref": "#/$defs/Fact"
+      },
+      "maxProperties": 100,
+      "propertyNames": {
+        "maxLength": 200,
+        "minLength": 1
+      },
+      "title": "Facts",
+      "type": "object"
+    },
+    "default_task_mode": {
+      "default": "soft_roleplay",
+      "enum": [
+        "full_roleplay",
+        "soft_roleplay",
+        "task_neutral"
+      ],
+      "title": "Default Task Mode",
+      "type": "string"
+    },
+    "growth": {
+      "$ref": "#/$defs/GrowthPolicy"
+    },
+    "revision": {
+      "default": 1,
+      "minimum": 1,
+      "title": "Revision",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "name"
+  ],
+  "title": "CharacterDefinition",
+  "type": "object",
+  "$schema": "https://json-schema.org/draft/2020-12/schema"
+}

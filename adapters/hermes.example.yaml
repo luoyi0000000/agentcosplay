@@ -1,0 +1,18 @@
+# Configuration example only; no connection has been created.
+mcp_servers:
+  character_runtime:
+    command: uv
+    args:
+      - --directory
+      - /absolute/path/to/character-runtime
+      - run
+      - --locked
+      - python
+      - -m
+      - character_runtime
+      - serve
+      - --transport
+      - stdio
+    env:
+      CHARACTER_OWNER: local-user
+      CHARACTER_DATA_DIR: /absolute/path/to/private-character-data

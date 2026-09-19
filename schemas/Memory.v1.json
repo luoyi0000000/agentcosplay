@@ -1,0 +1,177 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "maxLength": 200,
+      "minLength": 1,
+      "title": "Id",
+      "type": "string"
+    },
+    "owner": {
+      "maxLength": 200,
+      "minLength": 1,
+      "title": "Owner",
+      "type": "string"
+    },
+    "character_id": {
+      "maxLength": 200,
+      "minLength": 1,
+      "title": "Character Id",
+      "type": "string"
+    },
+    "kind": {
+      "default": "character_long_term",
+      "enum": [
+        "session",
+        "short_term",
+        "character_long_term",
+        "relationship",
+        "shared_roleplay",
+        "real_user"
+      ],
+      "title": "Kind",
+      "type": "string"
+    },
+    "scope": {
+      "default": "private",
+      "enum": [
+        "private",
+        "shared"
+      ],
+      "title": "Scope",
+      "type": "string"
+    },
+    "session_id": {
+      "anyOf": [
+        {
+          "maxLength": 200,
+          "minLength": 1,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Session Id"
+    },
+    "turn_id": {
+      "anyOf": [
+        {
+          "maxLength": 305,
+          "minLength": 1,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Turn Id"
+    },
+    "content": {
+      "maxLength": 4000,
+      "title": "Content",
+      "type": "string"
+    },
+    "importance": {
+      "default": 0.5,
+      "maximum": 1,
+      "minimum": 0,
+      "title": "Importance",
+      "type": "number"
+    },
+    "confidence": {
+      "default": 0.8,
+      "maximum": 1,
+      "minimum": 0,
+      "title": "Confidence",
+      "type": "number"
+    },
+    "source": {
+      "default": "conversation",
+      "maxLength": 2000,
+      "title": "Source",
+      "type": "string"
+    },
+    "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+    },
+    "last_access": {
+      "anyOf": [
+        {
+          "format": "date-time",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Last Access"
+    },
+    "expires_at": {
+      "anyOf": [
+        {
+          "format": "date-time",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Expires At"
+    },
+    "status": {
+      "default": "active",
+      "enum": [
+        "active",
+        "expired",
+        "forgotten"
+      ],
+      "title": "Status",
+      "type": "string"
+    },
+    "shared_with": {
+      "items": {
+        "maxLength": 200,
+        "minLength": 1,
+        "type": "string"
+      },
+      "maxItems": 100,
+      "title": "Shared With",
+      "type": "array"
+    },
+    "promoted_from": {
+      "anyOf": [
+        {
+          "maxLength": 200,
+          "minLength": 1,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Promoted From"
+    },
+    "confirmation": {
+      "default": "",
+      "maxLength": 2000,
+      "title": "Confirmation",
+      "type": "string"
+    }
+  },
+  "required": [
+    "owner",
+    "character_id",
+    "content"
+  ],
+  "title": "Memory",
+  "type": "object",
+  "$schema": "https://json-schema.org/draft/2020-12/schema"
+}

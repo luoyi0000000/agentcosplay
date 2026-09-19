@@ -1,0 +1,600 @@
+{
+  "$defs": {
+    "CharacterDefinition": {
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {
+          "const": 1,
+          "default": 1,
+          "title": "Schema Version",
+          "type": "integer"
+        },
+        "id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Id",
+          "type": "string"
+        },
+        "name": {
+          "maxLength": 100,
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "origin": {
+          "default": "original",
+          "enum": [
+            "original",
+            "ip"
+          ],
+          "title": "Origin",
+          "type": "string"
+        },
+        "mode": {
+          "default": "au",
+          "enum": [
+            "canon",
+            "au",
+            "inspired"
+          ],
+          "title": "Mode",
+          "type": "string"
+        },
+        "facts": {
+          "additionalProperties": {
+            "$ref": "#/$defs/Fact"
+          },
+          "maxProperties": 100,
+          "propertyNames": {
+            "maxLength": 200,
+            "minLength": 1
+          },
+          "title": "Facts",
+          "type": "object"
+        },
+        "default_task_mode": {
+          "default": "soft_roleplay",
+          "enum": [
+            "full_roleplay",
+            "soft_roleplay",
+            "task_neutral"
+          ],
+          "title": "Default Task Mode",
+          "type": "string"
+        },
+        "growth": {
+          "$ref": "#/$defs/GrowthPolicy"
+        },
+        "revision": {
+          "default": 1,
+          "minimum": 1,
+          "title": "Revision",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "title": "CharacterDefinition",
+      "type": "object"
+    },
+    "CharacterState": {
+      "additionalProperties": false,
+      "properties": {
+        "character_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Character Id",
+          "type": "string"
+        },
+        "relationship": {
+          "$ref": "#/$defs/Relationship"
+        },
+        "evolution": {
+          "items": {
+            "$ref": "#/$defs/Evolution"
+          },
+          "maxItems": 100,
+          "title": "Evolution",
+          "type": "array"
+        },
+        "relationship_history": {
+          "items": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "object"
+          },
+          "maxItems": 100,
+          "title": "Relationship History",
+          "type": "array"
+        },
+        "known_characters": {
+          "items": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 100,
+          "title": "Known Characters",
+          "type": "array"
+        },
+        "shared_world_id": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Shared World Id"
+        },
+        "turn_count": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Turn Count",
+          "type": "integer"
+        },
+        "last_growth_turn": {
+          "additionalProperties": {
+            "type": "integer"
+          },
+          "title": "Last Growth Turn",
+          "type": "object"
+        },
+        "revision": {
+          "default": 1,
+          "minimum": 1,
+          "title": "Revision",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "character_id"
+      ],
+      "title": "CharacterState",
+      "type": "object"
+    },
+    "Evolution": {
+      "additionalProperties": false,
+      "properties": {
+        "axis": {
+          "enum": [
+            "personality",
+            "world"
+          ],
+          "title": "Axis",
+          "type": "string"
+        },
+        "key": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Key",
+          "type": "string"
+        },
+        "value": {
+          "maxLength": 4000,
+          "minLength": 1,
+          "title": "Value",
+          "type": "string"
+        },
+        "portable_summary": {
+          "anyOf": [
+            {
+              "maxLength": 4000,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Portable Summary"
+        },
+        "evidence_ids": {
+          "items": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 10,
+          "title": "Evidence Ids",
+          "type": "array"
+        },
+        "at_turn": {
+          "minimum": 1,
+          "title": "At Turn",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "axis",
+        "key",
+        "value",
+        "at_turn"
+      ],
+      "title": "Evolution",
+      "type": "object"
+    },
+    "Fact": {
+      "additionalProperties": false,
+      "properties": {
+        "value": {
+          "maxLength": 4000,
+          "minLength": 1,
+          "title": "Value",
+          "type": "string"
+        },
+        "source_type": {
+          "default": "inferred",
+          "enum": [
+            "user_explicit",
+            "user_material",
+            "official",
+            "wiki",
+            "model",
+            "inferred"
+          ],
+          "title": "Source Type",
+          "type": "string"
+        },
+        "reference": {
+          "default": "",
+          "maxLength": 2000,
+          "title": "Reference",
+          "type": "string"
+        },
+        "confidence": {
+          "default": 0.5,
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Confidence",
+          "type": "number"
+        },
+        "canon_status": {
+          "default": "inferred",
+          "enum": [
+            "canon",
+            "user_defined",
+            "unverified",
+            "inferred"
+          ],
+          "title": "Canon Status",
+          "type": "string"
+        }
+      },
+      "required": [
+        "value"
+      ],
+      "title": "Fact",
+      "type": "object"
+    },
+    "GrowthPolicy": {
+      "additionalProperties": false,
+      "properties": {
+        "personality_mutability": {
+          "default": "low",
+          "enum": [
+            "low",
+            "medium",
+            "high"
+          ],
+          "title": "Personality Mutability",
+          "type": "string"
+        },
+        "relationship_mutability": {
+          "default": "medium",
+          "enum": [
+            "low",
+            "medium",
+            "high"
+          ],
+          "title": "Relationship Mutability",
+          "type": "string"
+        },
+        "world_state_mutability": {
+          "default": "low",
+          "enum": [
+            "low",
+            "medium",
+            "high"
+          ],
+          "title": "World State Mutability",
+          "type": "string"
+        }
+      },
+      "title": "GrowthPolicy",
+      "type": "object"
+    },
+    "Memory": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Id",
+          "type": "string"
+        },
+        "owner": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Owner",
+          "type": "string"
+        },
+        "character_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Character Id",
+          "type": "string"
+        },
+        "kind": {
+          "default": "character_long_term",
+          "enum": [
+            "session",
+            "short_term",
+            "character_long_term",
+            "relationship",
+            "shared_roleplay",
+            "real_user"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "scope": {
+          "default": "private",
+          "enum": [
+            "private",
+            "shared"
+          ],
+          "title": "Scope",
+          "type": "string"
+        },
+        "session_id": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Session Id"
+        },
+        "turn_id": {
+          "anyOf": [
+            {
+              "maxLength": 305,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Turn Id"
+        },
+        "content": {
+          "maxLength": 4000,
+          "title": "Content",
+          "type": "string"
+        },
+        "importance": {
+          "default": 0.5,
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Importance",
+          "type": "number"
+        },
+        "confidence": {
+          "default": 0.8,
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Confidence",
+          "type": "number"
+        },
+        "source": {
+          "default": "conversation",
+          "maxLength": 2000,
+          "title": "Source",
+          "type": "string"
+        },
+        "created_at": {
+          "format": "date-time",
+          "title": "Created At",
+          "type": "string"
+        },
+        "last_access": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Last Access"
+        },
+        "expires_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Expires At"
+        },
+        "status": {
+          "default": "active",
+          "enum": [
+            "active",
+            "expired",
+            "forgotten"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "shared_with": {
+          "items": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 100,
+          "title": "Shared With",
+          "type": "array"
+        },
+        "promoted_from": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Promoted From"
+        },
+        "confirmation": {
+          "default": "",
+          "maxLength": 2000,
+          "title": "Confirmation",
+          "type": "string"
+        }
+      },
+      "required": [
+        "owner",
+        "character_id",
+        "content"
+      ],
+      "title": "Memory",
+      "type": "object"
+    },
+    "Relationship": {
+      "additionalProperties": false,
+      "properties": {
+        "stage": {
+          "default": "stranger",
+          "enum": [
+            "stranger",
+            "acquaintance",
+            "familiar",
+            "close"
+          ],
+          "title": "Stage",
+          "type": "string"
+        },
+        "trust": {
+          "default": "low",
+          "enum": [
+            "low",
+            "medium",
+            "high"
+          ],
+          "title": "Trust",
+          "type": "string"
+        },
+        "familiarity": {
+          "default": "low",
+          "enum": [
+            "low",
+            "medium",
+            "high"
+          ],
+          "title": "Familiarity",
+          "type": "string"
+        },
+        "preferred_address": {
+          "default": "",
+          "maxLength": 100,
+          "title": "Preferred Address",
+          "type": "string"
+        },
+        "interaction_style": {
+          "default": "",
+          "maxLength": 500,
+          "title": "Interaction Style",
+          "type": "string"
+        },
+        "boundaries": {
+          "items": {
+            "maxLength": 4000,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 20,
+          "title": "Boundaries",
+          "type": "array"
+        }
+      },
+      "title": "Relationship",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": 1,
+      "default": 1,
+      "title": "Schema Version",
+      "type": "integer"
+    },
+    "definition": {
+      "$ref": "#/$defs/CharacterDefinition"
+    },
+    "state": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/CharacterState"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "memories": {
+      "items": {
+        "$ref": "#/$defs/Memory"
+      },
+      "maxItems": 10000,
+      "title": "Memories",
+      "type": "array"
+    },
+    "includes_memories": {
+      "default": false,
+      "title": "Includes Memories",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "definition"
+  ],
+  "title": "Package",
+  "type": "object",
+  "$schema": "https://json-schema.org/draft/2020-12/schema"
+}

@@ -1,0 +1,21 @@
+{
+  "name": "character-runtime",
+  "version": "0.1.0",
+  "description": "Persistent character runtime workflow backed by a separately connected MCP service.",
+  "author": {
+    "name": "Local developer"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Character Runtime",
+    "shortDescription": "Portable characters and isolated roleplay memory.",
+    "longDescription": "Use the shared Character Runtime MCP backend for character identity, state, memory and migration. Backend connection required.",
+    "developerName": "Local developer",
+    "category": "Productivity",
+    "capabilities": [
+      "Read",
+      "Write"
+    ],
+    "defaultPrompt": "创建一个角色，连接 Character Runtime 并开始对话。"
+  }
+}

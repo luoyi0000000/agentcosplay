@@ -1,0 +1,37 @@
+[build-system]
+requires = ["hatchling==1.32.3"]
+build-backend = "hatchling.build"
+
+[project]
+name = "character-runtime"
+version = "0.1.0"
+description = "Platform-neutral character state and memory runtime"
+requires-python = ">=3.11"
+dependencies = [
+  "pydantic>=2.12,<3", "mcp==2.2.0", "pyjwt[crypto]>=2.14,<3",
+  "uvicorn>=0.53,<1", "starlette>=1.6,<2",
+]
+
+[project.scripts]
+character-runtime = "character_runtime.cli:main"
+
+[dependency-groups]
+dev = [
+    "ruff>=0.12",
+    "mypy>=1.15",
+    "pyyaml>=6.0.3",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["character_runtime"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
