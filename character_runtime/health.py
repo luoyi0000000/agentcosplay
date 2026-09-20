@@ -10,8 +10,17 @@ from mcp import Client
 from mcp.client.stdio import StdioServerParameters
 
 from . import __version__
-from .demo import call
 from .storage import SQLiteStorage
+
+
+async def call(client: Client, tool: str, **arguments: Any) -> dict[str, Any]:
+    """Check protocol and business status without leaking returned private values."""
+    result = await client.call_tool(tool, arguments)
+    data = result.structured_content
+    if result.is_error or not isinstance(data, dict) or not data.get("ok"):
+        raise RuntimeError(f"Runtime operation failed: {tool}")
+    value: dict[str, Any] = data["result"]
+    return value
 
 
 async def check(data: Path) -> dict[str, Any]:

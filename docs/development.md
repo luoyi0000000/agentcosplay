@@ -1,42 +1,29 @@
-# 开发、测试与构建
+# 本地开发与验收
 
-## 环境与命令
+Python 3.11+，使用项目锁文件；不更改真实宿主配置，不自动发布。
 
-本页只面向后端开发者；完整安装见 INSTALL.md；Agent 入口是 skills.md。Marketplace 单独安装仅提供对话规则。
-
-Python >=3.11，uv；不需要 Node、Homebrew、Bash 或 WSL。macOS/Windows/Linux 使用同样的 Python/uv 命令；路径用 pathlib。此版本实际在 macOS arm64 / Python 3.11.15 验证，Windows/Linux 尚未实机验证。
-
-```text
-uv sync --locked --python 3.11
-uv run --locked python -m unittest discover -s tests -v
+```bash
+uv sync --locked
+uv run --locked python -m unittest discover -s tests -q
 uv run --locked ruff check .
 uv run --locked ruff format --check .
 uv run --locked mypy character_runtime
-uv run --locked python -m character_runtime.demo
-uv run --locked python -m scripts.schemas
-uv run --locked python -m scripts.build_distribution
-uv run --locked python -m scripts.check_installation
 uv build --build-constraints build-constraints.txt
+uv run --locked python -m scripts.check_installation
 ```
 
-运行/开发依赖由 uv.lock 锁定；构建后端及其依赖由 build-constraints.txt 锁定，更新任一依赖需重跑验证。首次安装需下载依赖；后续可使用已缓存依赖。无自动上传步骤。
+最后一项下载依赖并在中文、空格路径的临时目录安装。覆盖 install/doctor、真实 stdio 进程重连、源码移动、同一 HTTP 进程两个客户端双向读写、update/rollback/uninstall/reinstall。临时角色和配置自动删除；这不是 Hermes/AstrBot 应用实际聊天验收。
 
-`.venv` 保留给本地复现，`dist` 保留 wheel/sdist，均不入 Git。测试使用 TemporaryDirectory 自动清理数据库。不要用 `git clean -fdx` 清理可能包含用户数据的工作区。
+单测包含新旧角色契约、隔离、真实记忆确认、遗忘派生数据、Companion、Provider 过期、离线模拟、幂等回合、调度保留/回执/中断、安装文件占用与恢复。Skill 首用还需要代理场景复核，不能用静态字符串测试冒充实际 UI。
 
-## 测试范围
+.github/workflows/verify.yml 为 macOS/Windows/Linux 配置同样命令；未上传时该工作流未执行。Windows 依赖用户 ACL，POSIX 权限/符号链接测试只在适用系统执行；跨平台路径与文件占用恢复测试在所有平台运行。
 
-stdlib unittest 覆盖类型约束、所有者与角色隔离、来源优先级、session 路由、OOC/任务恢复、过期/遗忘/提升、显式共享、事务回滚、成长证据/限速、导入完整性、导出隐私、数据库重启、中文路径、并发 revision/事务。实际 SDK Client 测试 stdio 和 ASGI Streamable HTTP，不用假 MCP 接口。HTTP 测试校验未认证拒绝、不可伪造 owner 与 Host 保护；JWT 用真实 RSA 签名，JWKS 获取以本地 key 代替。
+## 契约与分发
 
-独立演示还启动/关闭两次真正的 stdio 服务进程。HTTP 的网络监听由本地回环检查补充，远程 OAuth 授权流程不以单元测试冒充。
+`python -m scripts.schemas` 生成公开契约。旧 Definition/State/Memory/Package V1 不变；新增 CompanionState/Observation V1、可选 Companion Package V2。Schema 漂移由测试检测。
 
-## Schema / Plugin / Skill
+正式安装器只有 install.py；Marketplace 直接消费 plugins/agentcosplay，不再维护单独 Skill ZIP 或 Bash 下载器。wheel 包含 Runtime，源码分发包含完整 Plugin/安装器/契约；普通用户从仓库安装。旧 character-runtime CLI 别名保留，避免破坏已有启动配置。
 
-`python -m scripts.schemas` 根据 Pydantic 重新生成四份公开契约；Schema 漂移测试保证契约和代码一致。示例角色卡只用合成身份。
+.venv 用于开发复现；dist、构建缓存、临时数据库不入 Git。清理只针对本次生成且可再生的路径，不能使用 git clean -fdx 删除未知用户文件。
 
-Plugin 位于 `plugins/agentcosplay/`，portable manifest 与 `.codex-plugin/plugin.json` 提供分发元数据。Skill 可独立执行当前会话角色对话；存在已连接后端时加载持久运行规则。仓库 marketplace 由 `.agents/plugins/marketplace.json` 提供。此环境已使用官方 Plugin Creator 和 Skill Creator 自带验证脚本，报告记录结果；脚本属于开发者环境，不作为本仓库运行依赖。PyYAML 同时用于 Hermes 原生配置合并，tomlkit 用于保留 Codex TOML 注释。
-
-## 变更流程
-
-先给角色隔离/记忆/授权等行为加失败测试，再改代码；运行相关测试后运行完整检查。修改模型需同步 schemas 和本契约说明。未知版本必须拒绝，增加迁移时保留旧版本回归样本（仍用合成数据）。
-
-本项目暂未选择开源许可证，不代表授权第三方公开分发。仓库提交只包含源码、契约、测试和文档；不提交本地数据、凭据、缓存或构建产物。正式部署前仍需单独完成 OAuth、基础设施和公网安全审计。
+版本变更同步 pyproject.toml、__init__.py、两个 plugin manifest 和 uv.lock。作者未选择 LICENSE，本轮不代选。

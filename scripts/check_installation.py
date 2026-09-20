@@ -21,7 +21,7 @@ from mcp import Client
 from mcp.client.stdio import StdioServerParameters
 from mcp.client.streamable_http import streamable_http_client
 
-from character_runtime.demo import call
+from character_runtime.health import call
 
 SOURCE = Path(__file__).resolve().parents[1]
 
@@ -96,7 +96,7 @@ async def shared(root: Path, character: str) -> None:
 
 
 def main() -> None:
-    with tempfile.TemporaryDirectory(prefix="agentcosplay-acceptance-") as directory:
+    with tempfile.TemporaryDirectory(prefix="agentcosplay 中文 acceptance ") as directory:
         root = Path(directory).resolve()
         checkout = root / "checkout"
         checkout.mkdir()

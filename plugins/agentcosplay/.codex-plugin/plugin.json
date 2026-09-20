@@ -1,6 +1,6 @@
 {
   "name": "agentcosplay",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "自然角色对话、角色切换与 OOC；连接后端后支持独立长期记忆。",
   "author": {
     "name": "luoyi0000000"
@@ -14,8 +14,11 @@
     "category": "Productivity",
     "capabilities": [],
     "websiteURL": "https://github.com/luoyi0000000/agentcosplay",
+    "brandColor": "#A64965",
+    "composerIcon": "./assets/logo.png",
+    "logo": "./assets/logo.png",
     "defaultPrompt": [
-      "用 agentcosplay 创建一个角色，陪我聊聊。",
+      "开始使用 agentcosplay。如果还没有角色，请先问我想扮演谁，也可以创建或导入角色。",
       "用 agentcosplay 扮演我指定的人物。"
     ]
   }

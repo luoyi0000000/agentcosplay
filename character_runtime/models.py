@@ -137,6 +137,11 @@ class Memory(Model):
 
     @model_validator(mode="after")
     def valid_scope(self) -> Self:
+        if self.source == "simulated_life" and self.kind not in (
+            "short_term",
+            "character_long_term",
+        ):
+            raise ValueError("Simulated life is never real-user or shared-event memory")
         if self.kind == "session" and self.session_id is None:
             raise ValueError("Session memory requires a session ID")
         if self.status != "forgotten" and not self.content.strip():

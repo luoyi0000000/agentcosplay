@@ -15,6 +15,7 @@ from starlette.applications import Starlette
 
 from . import __version__
 from .auth import JWTVerifier, LocalTokenVerifier
+from .companion_models import CompanionUpdate
 from .models import (
     Candidate,
     CharacterDefinition,
@@ -28,7 +29,8 @@ from .models import (
     Relationship,
     TaskMode,
 )
-from .packages import export_character, import_character
+from .packages import PackageV2, export_character, import_character
+from .providers import Observation, Provider
 from .runtime import Runtime
 from .storage import Storage
 
@@ -115,10 +117,13 @@ def build_server(
     audience: str | None = None,
     jwks_url: str | None = None,
     resource: str = "http://127.0.0.1:8765/mcp",
+    providers: tuple[Provider, ...] = (),
 ) -> MCPServer[Any]:
     verifier: JWTVerifier | LocalTokenVerifier | None = None
     auth = None
     if issuer or audience or jwks_url:
+        if providers:
+            raise ValueError("Shared local provider files are limited to a single-owner Runtime")
         if not all((issuer, audience, jwks_url)):
             raise ValueError("OAuth issuer, audience and JWKS URL must all be configured")
         verifier = JWTVerifier(issuer or "", audience or "", jwks_url or "", resource)
@@ -137,8 +142,10 @@ def build_server(
         token_verifier=verifier,
         auth=auth,
         log_level="CRITICAL",
-        instructions="Load runtime_context before roleplay. "
-        "Commit important candidate memories after each turn. User facts need explicit promotion.",
+        instructions="Open a session and load runtime_context before roleplay. "
+        "No active character means ask who the user wants to portray, not an error. "
+        "If tools fail, continue current-session roleplay and never claim persistence. "
+        "Commit important memories after each turn. User facts need explicit promotion.",
     )
 
     def runtime() -> Runtime:
@@ -146,8 +153,8 @@ def build_server(
             access = get_access_token()
             if access is None or not access.subject:
                 raise ValueError("Authenticated user identity is required")
-            return Runtime(storage, access.subject)
-        return Runtime(storage, local_owner)
+            return Runtime(storage, access.subject, providers=providers)
+        return Runtime(storage, local_owner, providers=providers)
 
     def scoped(rt: Runtime, session_id: str, character_id: str, *, ooc: bool = False) -> None:
         s = rt.session(session_id)
@@ -232,9 +239,60 @@ def build_server(
 
     @server.tool(annotations=read)
     @safe
-    def runtime_context(session_id: Identifier, query: str = "") -> dict[str, Any]:
+    def runtime_context(
+        session_id: Identifier,
+        query: str = "",
+        include_companion: bool = True,
+        include_self_model: bool = True,
+    ) -> dict[str, Any]:
         """Load definition, state, relevant roleplay memories and runtime rules."""
-        return runtime().context(session_id, query)
+        return runtime().context(
+            session_id,
+            query,
+            include_companion=include_companion,
+            include_self_model=include_self_model,
+        )
+
+    @server.tool(annotations=write)
+    @safe
+    def companion_control(session_id: Identifier, update: CompanionUpdate) -> dict[str, Any]:
+        """Explicit OOC companion configuration. Automatic mood/topics use turn_commit."""
+        rt = runtime()
+        session = rt.session(session_id)
+        if session.character_id is None:
+            raise ValueError("Choose a character first")
+        scoped(rt, session_id, session.character_id, ooc=True)
+        return rt.companion.update(session.character_id, update).model_dump(mode="json")
+
+    @server.tool(annotations=write)
+    @safe
+    def provider_observe(session_id: Identifier, observation: Observation) -> dict[str, Any]:
+        """Supply sourced, expiring host context; never provider credentials."""
+        rt = runtime()
+        session = rt.session(session_id)
+        if session.character_id is None:
+            raise ValueError("Choose a character first")
+        rt.companion.observe(session.character_id, observation)
+        return {"observed": observation.kind}
+
+    @server.tool(annotations=write)
+    @safe
+    def proactive_decide(
+        character_id: Identifier, reservation_id: Identifier | None = None
+    ) -> dict[str, Any]:
+        """Scheduler decision and atomic reservation; does not generate or send a message."""
+        rt = runtime()
+        with storage.transaction():
+            rt.advance(character_id)
+            return rt.companion.decide(character_id, reservation_id).model_dump(mode="json")
+
+    @server.tool(annotations=write)
+    @safe
+    def proactive_ack(
+        character_id: Identifier, decision_id: Identifier, delivered: bool
+    ) -> dict[str, Any]:
+        """Acknowledge actual delivery; unknown delivery must not be retried automatically."""
+        return runtime().companion.ack(character_id, decision_id, delivered)
 
     @server.tool(annotations=read)
     @safe
@@ -303,24 +361,28 @@ def build_server(
         turn_id: Identifier,
         candidates: list[Candidate],
         growth: GrowthProposal | None = None,
+        companion: CompanionUpdate | None = None,
     ) -> dict[str, Any]:
         """Commit important memories and gradual growth once per turn ID."""
-        return runtime().commit_turn(session_id, turn_id, candidates, growth)
+        return runtime().commit_turn(session_id, turn_id, candidates, growth, companion)
 
     @server.tool(annotations=read)
     @safe
     def character_export(
-        character_id: Identifier, include_memories: bool = False
+        character_id: Identifier, include_memories: bool = False, include_companion: bool = False
     ) -> dict[str, Any]:
         """Export portable JSON. Include private character memory ONLY on explicit user opt-in."""
         return export_character(
-            runtime(), character_id, include_memories=include_memories
+            runtime(),
+            character_id,
+            include_memories=include_memories,
+            include_companion=include_companion,
         ).model_dump(mode="json")
 
     @server.tool(annotations=write)
     @safe
-    def character_import(package: Package) -> dict[str, Any]:
-        """Import validated V1 data atomically, with fresh IDs and no external grants."""
+    def character_import(package: Package | PackageV2) -> dict[str, Any]:
+        """Import V1/V2 data atomically, with fresh IDs and no external or proactive grants."""
         return import_character(runtime(), package.model_dump(mode="json")).model_dump(mode="json")
 
     return server

@@ -1,0 +1,28 @@
+name: Verify runtime and installer
+on: [push, pull_request, workflow_dispatch]
+permissions:
+  contents: read
+jobs:
+  verify:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    env:
+      PYTHONUTF8: '1'
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
+        with:
+          version: '0.11.7'
+          python-version: '3.11'
+      - run: uv sync --locked
+      - run: uv run --locked python -m unittest discover -s tests -q
+      - run: uv run --locked ruff check .
+      - run: uv run --locked ruff format --check .
+      - run: uv run --locked mypy character_runtime
+      - run: uv build --build-constraints build-constraints.txt
+      - run: uv run --locked python -m scripts.check_installation

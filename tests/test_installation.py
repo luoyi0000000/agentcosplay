@@ -129,6 +129,7 @@ class TransactionTests(unittest.TestCase):
 
 
 class ReviewRegressionTests(unittest.TestCase):
+    @unittest.skipUnless(os.name == "posix", "Executable symlinks need privileges on Windows")
     def test_launcher_ignores_working_directory_modules(self):
         import subprocess
         import sys
@@ -189,3 +190,42 @@ class ReviewRegressionTests(unittest.TestCase):
             with install.lock(root):
                 install.recover(root)
             self.assertEqual(config.read_bytes(), b"original")
+
+    def test_uninstall_can_resume_cleanup_after_locked_release(self):
+        from unittest.mock import patch
+
+        import install
+
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder).resolve()
+            app, data = root / "应用 runtime", root / "角色 data"
+            (app / "releases/a").mkdir(parents=True)
+            data.mkdir()
+            (data / "keep").write_bytes(b"precious")
+            install.atomic_write(
+                app / "installed.json",
+                install.encode(
+                    {"active": "a", "data_dir": str(data), "integrations": [], "owner": "test"}
+                ),
+            )
+            with patch("install.shutil.rmtree", side_effect=PermissionError("locked")):
+                with self.assertRaises(PermissionError):
+                    install.uninstall(app)
+            self.assertTrue(install.state_of(app)["uninstalled"])
+            install.uninstall(app)
+            self.assertFalse((app / "releases").exists())
+            self.assertEqual((data / "keep").read_bytes(), b"precious")
+
+    def test_locked_file_replacement_preserves_original_and_cleans_temp(self):
+        from unittest.mock import patch
+
+        import install
+
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "配置 文件"
+            path.write_bytes(b"original")
+            with patch("install.os.replace", side_effect=PermissionError("locked")):
+                with self.assertRaises(PermissionError):
+                    install.atomic_write(path, b"replacement")
+            self.assertEqual(path.read_bytes(), b"original")
+            self.assertEqual(list(Path(folder).iterdir()), [path])

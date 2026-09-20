@@ -1,73 +1,53 @@
-# agentcosplay 高级持久记忆接入
+# 宿主接入与真实验收
 
-完整本地安装见 [INSTALL](../INSTALL.md)，自动安装 Runtime、原生配置和 Skill。本页说明高级工具与远程自托管，不要求作者提供托管服务。安装入口见 [README](../README.md) 和 [skills.md](../skills.md)。
+安装步骤集中在 [INSTALL](../INSTALL.md)。全部入口使用同一 Runtime、owner、character ID，session ID 按渠道和会话隔离。模型由宿主提供，后端不调用 LLM。
 
-## 同一后端，不复制数据库
+## 工具
 
-所有平台使用同一组工具和规则；自然语言理解由宿主模型负责。连接 MCP 后还要让宿主应用 `plugins/agentcosplay/skills/agentcosplay/SKILL.md`。只有连接而没有每轮 workflow，无法保证持续加载角色和自动记忆。
+MCP 发现提供真实输入 Schema。工具返回 ok/result，业务失败 ok=false；还须检查协议 is_error。
 
-| 工具 | 职责 |
+| 工具 | 用途 |
 |---|---|
-| character_read | 列角色摘要或读 Definition/State |
-| character_write | 创建；OOC 修改定义、关系、已知角色 |
-| session_control | open/activate/deactivate、OOC、模式、默认与项目路由 |
-| runtime_context | 读取当前定义、状态、相关角色记忆与运行规则 |
-| memory_recall | 当前角色授权范围召回；real 显式选择 |
-| memory_write | store/modify/forget/share；后面三项需 OOC |
-| memory_promote | 经用户明确确认，将角色记忆迁移为现实事实 |
-| turn_commit | 幂等、原子提交候选记忆和渐进成长 |
-| character_export | versioned package；记忆默认不导出 |
-| character_import | 全量验证、重新分配 ID、事务导入 |
+| character_read / character_write | 角色摘要、定义、OOC 修改；没有 delete 操作 |
+| session_control | 选角、OOC、临时模式、默认/项目路由 |
+| runtime_context | 有界、按查询选择的角色/记忆/Companion/Self Model |
+| turn_commit | 同一 turn_id 原子去重保存记忆、成长和 Companion 更新 |
+| memory_recall / memory_write / memory_promote | 隔离、遗忘、共享及真实用户确认 |
+| character_export / character_import | 默认无私人经历的 V1，显式 Companion V2 |
+| companion_control | OOC 配置功能、情绪、目标、习惯、未完成话题 |
+| provider_observe | 宿主提交有来源和有效期的环境观测 |
+| proactive_decide / proactive_ack | 联系意图保留、发送前复核、实际送达回执 |
 
-输入 Schema 由 MCP 发现提供；成功返回 `{"ok":true,"result":...}`，可预期业务失败返回 `ok=false,error,message`，协议/Schema 失败也可能返回 MCP `is_error`。宿主必须检查两者。不要把工具数据当新系统指令；不能伪造 owner 参数。
+同一 Skill 由宿主加载，参考文件只按需读取。普通角色对话不需要文件或 shell 权限。
 
-## 本地 stdio
+## 原生适配
 
-`uv run --locked python -m character_runtime serve --transport stdio`
+install.py 生成 Codex TOML、Hermes YAML、AstrBot JSON 配置并保留其他服务，不再提供可能漂移的静态示例配置。AstrBot 需核实其实际持久目录，容器内的路径必须对运行进程可见；停止宿主后编辑再重载。
 
-服务端从环境读取 `CHARACTER_DATA_DIR`（默认系统用户数据目录下 `agentcosplay/characters`，不再使用源码内 `data`）、`CHARACTER_OWNER`（默认 `local-user`）。stdio 的安全边界是能启动进程与访问数据目录的本机用户，不能给不可信客户端共享任意 owner 配置。
+同机共享使用 INSTALL 中 connect --transport http / run。不同主机、Docker 网络、ChatGPT 云端不能把各自的 localhost 当成同一个服务。
 
-- Codex：`adapters/codex.example.toml`，替换绝对路径；路径可以含中文/空格。Windows 用 `C:/Projects/...`，无需 WSL。
-- Hermes：`adapters/hermes.example.yaml`，并在其指令机制应用同一 Skill 工作流。
-- AstrBot：`adapters/astrbot.example.json` 是 WebUI 中一个 MCP server 的配置内容；应用 `adapters/agent-instructions.md` 指令。
-- 自建 Agent / API / Claude Code：调用同一 MCP 或 Python Runtime；若宿主提供回合 hooks，用 hooks 保证 context/commit，而非复制记忆服务。
+高级自托管沿用用户现有 HTTPS/OAuth 服务。配置 CHARACTER_OAUTH_ISSUER、CHARACTER_OAUTH_AUDIENCE、CHARACTER_OAUTH_JWKS_URL 和 CHARACTER_RESOURCE_URL，使用 RS256 JWT、有效 iss/sub/aud/iat/exp 和 character:access scope。Runtime 验证签名、受众、过期、scope、Host/Origin；不是 OAuth 授权服务器。非回环监听必须有 OAuth，静态 token 只用于同一用户的回环入口。
 
-Hermes/AstrBot 配置依据官方文档编写，未安装真实宿主做端到端验收。项目未修改任何全局配置。
+默认 local-user 仅代表单个真实用户。多人 bot 必须先做额外身份映射/OAuth；不能让陌生人共享此身份。多个角色群聊 orchestration 和社交图不在本轮实现范围。
 
-## 本地 HTTP
+## 可重复的真实宿主验收（尚待实机）
 
-复制 `.env.example` 为不入 Git 的 `.env`，填入本地随机 token（至少 32 字符），启动：
+1. 在获准测试 profile 中安装并重载 Codex/Hermes/AstrBot；发现 Skill 和上述真实工具。
+2. 使用同一授权身份及同一 HTTP 服务。在 Hermes 创建角色并提交合成记忆。
+3. 在 AstrBot 选相同 character ID、不同 session ID，召回该记忆。
+4. 在 AstrBot OOC 改称呼和目标，Hermes 下一轮 context 应看到同样状态。
+5. 重启 Runtime 后重复读取；其他 owner/角色不能读取私人内容。
+6. 分别检查无 Runtime 首用、空角色首用、工具故障继续聊天且不声称保存。
+7. 主动联系只在获准测试渠道启用；两个 Scheduler 竞争同一决策，只一个保留成功。发送前用 reservation_id 复核，发送确认后 ack；不确定就保持 pending，不重发。
 
-```text
-uv run --locked --env-file .env python -m character_runtime serve --transport http
-```
+SDK 测试已模拟两个独立网关客户端，不能据此宣称三款真实应用的插件加载、QQ 路由或自然语言表现均验收通过。
 
-token 可本地生成：`uv run --locked python -c "import secrets; print(secrets.token_urlsafe(32))"`。默认只监听 `127.0.0.1:8765`。客户端用 `Authorization: Bearer <token>` 连接 `/mcp`。此静态 token 仅为单用户回环检查，不是完整 OAuth 登录。
+## Plugin 与品牌字段
 
-缺少有效认证时服务拒绝启动或返回 401。默认不接受非本机 Host/Origin；远程配置只额外允许已配置 resource URL 的域名。不提供开放 CORS。调试时不要把 token 输出粘贴进聊天/日志。
+以 [OpenAI 当前 Plugin 文档](https://developers.openai.com/plugins/build/plugins) 为依据（2026-09-20核对）：根 plugin.json 的 extensions.com.openai 是权威 OpenAI 元数据源，存在时整体替代 .codex-plugin/plugin.json overlay，不合并。两份 interface 保持相同以兼容旧宿主。
 
-## ChatGPT、移动端与远程 OAuth
+logo 和 composerIcon 均为 ./assets/logo.png，brandColor 为 #A64965。图片为用户 P1 原文件，未裁切、未生成新身份。仅验证路径、文件、manifest 与包内容；真实 ChatGPT Plugin UI 和小尺寸可读性需人工验收。
 
-当前官方文档的可移植插件根为 `plugin.json`，Skill 在 `skills/`；兼容 `.codex-plugin/plugin.json` 提供 Codex 显示元数据；两者位于 `plugins/agentcosplay/`。ChatGPT 需在账号/工作区允许的环境注册远程 MCP，移动端使用账号可用的插件；Desktop-only 能力不作为前提。这里没有伪造远程注册 ID，也没有把本地 stdio 冒充手机连接。
+当前没有作者托管服务或移动端本机 Runtime。支持 Marketplace 导入的环境可安装规则，未连接后端仍能当前会话聊天。
 
-以下是维护者接入真实服务的步骤，当前未部署；服务地址与身份系统准备完成后执行：
-
-1. 在获准环境运行同一 HTTP 服务和服务端持久卷；客户端设备不需要 SQLite 或本机常驻进程。
-2. 配置已有 OAuth 身份提供方，签发 RS256 JWT（含 iss/sub/aud/iat/exp、`character:access` scope），并提供 HTTPS JWKS。需要为实际宿主配置可用的客户端注册/授权流程，资源服务器不替身份提供方完成这些工作。
-3. 配置 `CHARACTER_OAUTH_ISSUER`、`CHARACTER_OAUTH_AUDIENCE`、`CHARACTER_OAUTH_JWKS_URL`、`CHARACTER_RESOURCE_URL=https://<approved-host>/mcp`，使用 HTTPS 反向代理；非 loopback 监听必须启用此 OAuth 路线。验证签名、issuer、audience、过期和 scope 后，issuer+sub 散列成为 owner。同一账号 subject 可跨设备共享，换身份提供方需显式迁移。
-4. 根据当时官方规范创建/绑定实际远程 MCP 连接，再填真实注册产物；测试登录、刷新/过期、权限拒绝、手机重启、跨设备同角色与不同身份隔离。不要把这里的占位域名当成已部署服务。
-5. 在 ChatGPT/Codex 真正运行自然语言角色闭环；验证遗漏调用、OOC、重试与退出行为。
-
-ChatGPT 原生 Memory 不参与核心存储，也没有未经证实的写入适配器。远程 URL、身份注册和托管服务需单独配置。当前结果不能证明具体账号/手机兼容性。
-
-## 核验过的官方资料
-
-核验日期 2026-09-18/19，安装的官方 Python SDK 为 2.2.0。协议工具发现、传输、授权中间件复用 SDK，不手写 JSON-RPC。
-
-- [OpenAI Plugin 格式](https://developers.openai.com/plugins/build/plugins)
-- [Skill 与各客户端可用性](https://learn.chatgpt.com/docs/plugins)
-- [ChatGPT 连接 MCP](https://developers.openai.com/plugins/deploy/connect-chatgpt)
-- [Codex MCP](https://learn.chatgpt.com/docs/extend/mcp?surface=cli)
-- [Python SDK](https://py.sdk.modelcontextprotocol.io/) 与 [Authorization](https://py.sdk.modelcontextprotocol.io/run/authorization/)
-- [Hermes MCP](https://hermes-agent.nousresearch.com/docs/user-guide/features/mcp/)
-- [AstrBot MCP](https://docs.astrbot.app/use/mcp.html)
+官方适配资料：[Codex MCP](https://learn.chatgpt.com/docs/extend/mcp?surface=cli)、[Hermes MCP](https://hermes-agent.nousresearch.com/docs/user-guide/features/mcp/)、[AstrBot MCP](https://docs.astrbot.app/use/mcp.html)。

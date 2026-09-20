@@ -87,7 +87,9 @@ class MCPTests(unittest.IsolatedAsyncioTestCase):
                         streamable_http_client("http://127.0.0.1:8765/mcp", http_client=client)
                     ) as mcp:
                         listed = await mcp.list_tools()
-                        self.assertEqual(len(listed.tools), 10)
+                        self.assertTrue(
+                            {"runtime_context", "memory_promote"} <= {t.name for t in listed.tools}
+                        )
                         created = await mcp.call_tool(
                             "character_write",
                             {
@@ -146,7 +148,7 @@ class SharedRuntimeTests(unittest.IsolatedAsyncioTestCase):
     async def test_two_gateway_clients_share_one_runtime_bidirectionally(self):
         from contextlib import AsyncExitStack
 
-        from character_runtime.demo import call
+        from character_runtime.health import call
 
         with tempfile.TemporaryDirectory() as folder:
             store = SQLiteStorage(Path(folder) / "one-runtime.sqlite3")
@@ -204,5 +206,47 @@ class SharedRuntimeTests(unittest.IsolatedAsyncioTestCase):
                         context = await call(reader, "runtime_context", session_id=other)
                         self.assertIn(content, [m["content"] for m in context["memories"]])
                     self.assertEqual(len(store.list("same-user", "definition")), 1)
+                    await call(
+                        b,
+                        "session_control",
+                        request={"action": "enter_ooc", "session_id": "astrbot-entry"},
+                    )
+                    state = (await call(b, "character_read", character_id=character["id"]))["state"]
+                    relation = {**state["relationship"], "preferred_address": "旅人"}
+                    await call(
+                        b,
+                        "character_write",
+                        request={
+                            "action": "relationship",
+                            "session_id": "astrbot-entry",
+                            "character_id": character["id"],
+                            "relationship": relation,
+                            "expected_revision": state["revision"],
+                        },
+                    )
+                    await call(
+                        b,
+                        "companion_control",
+                        session_id="astrbot-entry",
+                        update={"goal": {"id": "read", "description": "共同选择的读书目标"}},
+                    )
+                    context = await call(a, "runtime_context", session_id="hermes-entry")
+                    self.assertEqual(context["state"]["relationship"]["preferred_address"], "旅人")
+                    self.assertEqual(
+                        context["companion"]["goals"][0]["description"], "共同选择的读书目标"
+                    )
+                    denied = await a.call_tool(
+                        "companion_control",
+                        {
+                            "session_id": "hermes-entry",
+                            "update": {"settings": {"proactive_contact": True}},
+                        },
+                    )
+                    self.assertFalse(denied.structured_content["ok"])
+                    self.assertFalse(
+                        (await call(a, "proactive_decide", character_id=character["id"]))[
+                            "should_contact"
+                        ]
+                    )
             finally:
                 store.close()

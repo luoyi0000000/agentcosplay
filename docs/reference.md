@@ -2,7 +2,7 @@
 
 ## 类型与版本
 
-规范来源为 `character_runtime/models.py`，可分发 JSON Schema 在 `schemas/*.v1.json`。额外字段拒绝；字符串、列表、数值有上限；时间必须带时区，内部 UTC。Package 当前仅接受 `schema_version=1`，SQLite `user_version=1`；未知版本明确拒绝。没有历史版本，不虚构空迁移。将来增加版本时显式转换、验证后事务写入。
+规范来源为 `character_runtime/models.py`，可分发 JSON Schema 在 `schemas/*.v1.json`。额外字段拒绝；字符串、列表、数值有上限；时间必须带时区，内部 UTC。SQLite 仍为 user_version=1，Definition/State/Memory/Package V1 契约不变。新增独立 CompanionState V1 与 Observation V1，不覆盖旧记录。角色导出默认仍是 V1；显式 include_memories=true 且 include_companion=true 才导出 Package V2。未知版本拒绝。
 
 | 对象 | 关键内容 | 不能混入 |
 |---|---|---|
@@ -30,7 +30,7 @@
 
 `turn_commit` 自动丢弃 importance < .3 或 confidence < .5 的候选；其他字段由宿主从真实输入或已确立的虚构事件中提取。一次提交最多 20 条；稳定 turn ID 保证重试不重复写入/成长。importance/confidence 是策略，不是机器学习模型。
 
-召回先验证 owner、character、共享授权、session、状态与过期，再按关键词匹配、importance × confidence 与年龄衰减排序，默认至多 20 条、最大 100 条，更新 last_access。中文查询支持子串匹配，未做分词或语义嵌入。当前每次扫描该 owner 的全部记忆，大规模使用需换索引查询；衰减影响排名，不自动擦除。
+召回先验证 owner、character、共享授权、session、状态与过期，再按关键词匹配、importance × confidence 与年龄衰减排序，memory_recall 默认至多 20 条、最大 100 条；runtime_context 最多 8 条、每正文 800 字符（明确标记截断），更新 last_access。中文查询支持子串匹配，未做分词或语义嵌入。当前每次扫描该 owner 的全部记忆，大规模使用需换索引查询；衰减影响排名，不自动擦除。
 
 过期记录会从召回排除并标记 expired，正文仍保留；显式修改到未来 expiration 会同步恢复 active 状态，即使此前已被召回流程标记 expired。临时记忆的期限在模型边界统一校验，导入和修改也不能省略或超出 session 1 天 / short_term 30 天上限；显式修改到合法未来 expiration 可恢复过期记忆，forgotten 永远不可恢复。MCP 当前提供正文修改，TTL 在写候选时指定；复杂保留策略可用核心接口扩展。
 
@@ -71,6 +71,16 @@ GrowthProposal 提供 `personality_summaries/world_summaries`：仅写可携带�
 - 核心 API 属于可信进程接口；向模型暴露的 MCP 不接受任意 owner，修改配置/私有记忆需匹配活动角色与 OOC。OOC 是工作流状态，不是独立的用户认证。
 - HTTP 强制认证、Host/Origin 检查与 10 MB body 上限；不开放 CORS。静态 token 只用于回环测试。远程为现成 OAuth 提供方的 RS256 JWT 验签、issuer/audience/expiry/scope 校验，不自建授权服务器。
 - 用户授权文本由宿主传入，不能密码学证明“人刚刚点击确认”。依赖宿主权限与用户意图识别；不可信文档、记忆、角色请求不能当成授权。
-- 配置用环境变量，`.env`/数据库/日志不入 Git；服务禁用访问日志与常规 traceback 输出。测试与演示全为合成数据。
+- 配置用环境变量，`.env`/数据库/日志不入 Git；服务禁用访问日志与常规 traceback 输出。验收测试全为合成数据。
 - 新建数据目录使用 0700，新建 DB 与 SQLite sidecar 使用 0600（POSIX）；已有权限过宽的 DB/-wal/-shm 或符号链接会被拒绝，不擅自修改既有文件/父目录。Windows 依赖服务账号及目录 ACL，尚未实机验证。
 - 数据库未做应用层加密。部署应使用私有服务账户、磁盘加密、受限文件权限与受控备份。不能把能读取数据库/启动配置的本机攻击者视作已被隔离。
+
+## Companion 与版本兼容
+
+详细领域契约见 [companion](companion.md)。Self Model 用 JSON Pointer 指向当前 context 的 Definition/State/Memory/Companion 字段，没有第二份持久人格。
+
+1.2.0 读取 1.1.0 的 SQLite V1；只添加 companion collection，旧角色记录无需升级或删除。旧 1.1.0 可继续读取原有核心记录，忽略并保留新 collection；回滚期间不执行新陪伴功能。安装器回滚会验证旧程序可打开 DB，保留当前数据，不恢复旧快照。
+
+Package V1→V2 为深拷贝转换，添加 companion=null；原输入/原文件不改写，作为原始备份保留。导入始终创建新人物，不更新旧人物。V2 导出默认关闭主动联系、模拟授权，剔除 provider/location 观测、投递凭据和用户活动时间；导入再次剔除。只有显式私人数据 opt-in 才能携带 Mood/Goals/Habits/Topics/Life。1.1.0 不能导入 V2，需用默认 V1 导出或新 Runtime。不更改 SQLite schema，因此本轮没有数据库升级迁移；备份方式继续使用 INSTALL 的停服务完整目录备份。
+
+source=simulated_life 只允许角色长期/短期记忆；普通 store、模型验证、import、promotion 共用边界，禁止 real_user/shared_roleplay/relationship。模拟证据不作为用户互动成长依据。遗忘或提升关联记忆时，同时删除依赖它的 Companion mood/goal/habit 内容，避免旁路泄露。

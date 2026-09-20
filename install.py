@@ -453,9 +453,15 @@ def rollback(root: Path) -> dict[str, Any]:
 
 def uninstall(root: Path) -> dict[str, Any]:
     old = state_of(root)
-    if not old or old.get("uninstalled"):
+    if not old:
         return {"ok": True, "already_uninstalled": True}
     validate_data_path(Path(old["data_dir"]), [root])
+    if old.get("uninstalled"):
+        # A locked release or process interruption may have stopped post-commit cleanup.
+        for name in ("releases", "cache", "bootstrap"):
+            if (root / name).exists():
+                shutil.rmtree(root / name)
+        return {"ok": True, "already_uninstalled": True, "data_preserved": True}
     release = release_at(root, old["active"])
     tx = Transaction(root)
     try:

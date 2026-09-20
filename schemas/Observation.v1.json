@@ -1,0 +1,106 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": 1,
+      "default": 1,
+      "title": "Schema Version",
+      "type": "integer"
+    },
+    "kind": {
+      "enum": [
+        "time",
+        "weather",
+        "schedule",
+        "location"
+      ],
+      "title": "Kind",
+      "type": "string"
+    },
+    "source": {
+      "maxLength": 200,
+      "minLength": 1,
+      "title": "Source",
+      "type": "string"
+    },
+    "summary": {
+      "maxLength": 500,
+      "title": "Summary",
+      "type": "string"
+    },
+    "observed_at": {
+      "format": "date-time",
+      "title": "Observed At",
+      "type": "string"
+    },
+    "fetched_at": {
+      "format": "date-time",
+      "title": "Fetched At",
+      "type": "string"
+    },
+    "expires_at": {
+      "format": "date-time",
+      "title": "Expires At",
+      "type": "string"
+    },
+    "location_scope": {
+      "default": "",
+      "maxLength": 100,
+      "title": "Location Scope",
+      "type": "string"
+    },
+    "condition": {
+      "default": "unknown",
+      "enum": [
+        "unknown",
+        "clear",
+        "rain",
+        "snow",
+        "storm"
+      ],
+      "title": "Condition",
+      "type": "string"
+    },
+    "activity": {
+      "anyOf": [
+        {
+          "enum": [
+            "idle",
+            "reading",
+            "resting",
+            "working",
+            "walking"
+          ],
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Activity"
+    },
+    "availability": {
+      "default": "unknown",
+      "enum": [
+        "unknown",
+        "available",
+        "busy",
+        "unavailable"
+      ],
+      "title": "Availability",
+      "type": "string"
+    }
+  },
+  "required": [
+    "kind",
+    "source",
+    "summary",
+    "observed_at",
+    "fetched_at",
+    "expires_at"
+  ],
+  "title": "Observation",
+  "type": "object",
+  "$schema": "https://json-schema.org/draft/2020-12/schema"
+}

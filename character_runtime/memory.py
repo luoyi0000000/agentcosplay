@@ -38,6 +38,11 @@ class Memories:
         candidate = Candidate.model_validate(candidate.model_dump())
         if candidate.kind == "real_user":
             raise ValueError("Use explicit promotion to store real-user facts")
+        if candidate.source == "simulated_life" and candidate.kind not in (
+            "short_term",
+            "character_long_term",
+        ):
+            raise ValueError("Simulated life cannot represent shared or real-user experiences")
         kind = candidate.kind
         if kind == "character_long_term" and candidate.importance < 0.7:
             kind = "short_term"
@@ -152,6 +157,8 @@ class Memories:
             raise ValueError("Explicit user confirmation of truth and storage is required")
         with self.storage.transaction():
             m = self.owned(character_id, memory_id)
+            if m.source == "simulated_life":
+                raise ValueError("Simulated life cannot be promoted to real-user facts")
             for data in self.storage.list(self.owner, "memory"):
                 if data.get("promoted_from") == m.id and data.get("status") == "active":
                     return Memory.model_validate(data)
@@ -209,3 +216,21 @@ class Memories:
         ]
         state.revision += 1
         self.characters.save_state(state)
+        # Erase derived companion bodies as well, so forget/promotion cannot leak through context.
+        from .companion import Companion
+        from .companion_models import Mood
+
+        companion = Companion(self.storage, self.owner, self.characters)
+        if self.storage.get(self.owner, "companion", character_id) is not None:
+            record = companion.get(character_id)
+            if affected.intersection(record.mood.evidence_ids):
+                record.mood = Mood()
+            removed_goals = {g.id for g in record.goals if affected.intersection(g.evidence_ids)}
+            pending = record.pending_decision
+            if pending and pending.topic_id in {"goal:" + key for key in removed_goals}:
+                # Keep the reservation as a tombstone: delivery may already have happened.
+                pending.topic, pending.reason, pending.context = "", "Evidence removed", {}
+                pending.should_contact = False
+            record.goals = [g for g in record.goals if not affected.intersection(g.evidence_ids)]
+            record.habits = [h for h in record.habits if not affected.intersection(h.evidence_ids)]
+            companion._save(record)

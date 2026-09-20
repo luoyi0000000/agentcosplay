@@ -1,8 +1,0 @@
-{
-  "command": "uv",
-  "args": ["--directory", "/absolute/path/to/agentcosplay", "run", "--locked", "python", "-m", "character_runtime", "serve", "--transport", "stdio"],
-  "env": {
-    "CHARACTER_OWNER": "local-user",
-    "CHARACTER_DATA_DIR": "/absolute/path/to/private-character-data"
-  }
-}

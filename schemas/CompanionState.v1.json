@@ -1,0 +1,835 @@
+{
+  "$defs": {
+    "Candidate": {
+      "additionalProperties": false,
+      "properties": {
+        "content": {
+          "maxLength": 4000,
+          "minLength": 1,
+          "title": "Content",
+          "type": "string"
+        },
+        "kind": {
+          "default": "character_long_term",
+          "enum": [
+            "session",
+            "short_term",
+            "character_long_term",
+            "relationship",
+            "shared_roleplay",
+            "real_user"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "importance": {
+          "default": 0.5,
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Importance",
+          "type": "number"
+        },
+        "confidence": {
+          "default": 0.8,
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Confidence",
+          "type": "number"
+        },
+        "source": {
+          "default": "conversation",
+          "maxLength": 2000,
+          "title": "Source",
+          "type": "string"
+        },
+        "ttl_seconds": {
+          "anyOf": [
+            {
+              "maximum": 31536000,
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Ttl Seconds"
+        }
+      },
+      "required": [
+        "content"
+      ],
+      "title": "Candidate",
+      "type": "object"
+    },
+    "Decision": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Id",
+          "type": "string"
+        },
+        "should_contact": {
+          "default": false,
+          "title": "Should Contact",
+          "type": "boolean"
+        },
+        "reason": {
+          "default": "",
+          "maxLength": 240,
+          "title": "Reason",
+          "type": "string"
+        },
+        "topic": {
+          "default": "",
+          "maxLength": 240,
+          "title": "Topic",
+          "type": "string"
+        },
+        "topic_id": {
+          "default": "",
+          "maxLength": 220,
+          "title": "Topic Id",
+          "type": "string"
+        },
+        "urgency": {
+          "default": "low",
+          "enum": [
+            "low",
+            "normal",
+            "high"
+          ],
+          "title": "Urgency",
+          "type": "string"
+        },
+        "context": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "maxProperties": 5,
+          "title": "Context",
+          "type": "object"
+        },
+        "silence_reason": {
+          "default": "",
+          "maxLength": 100,
+          "title": "Silence Reason",
+          "type": "string"
+        },
+        "cooldown": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Cooldown",
+          "type": "integer"
+        },
+        "created_at": {
+          "format": "date-time",
+          "title": "Created At",
+          "type": "string"
+        }
+      },
+      "title": "Decision",
+      "type": "object"
+    },
+    "Goal": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Id",
+          "type": "string"
+        },
+        "description": {
+          "maxLength": 500,
+          "minLength": 1,
+          "title": "Description",
+          "type": "string"
+        },
+        "source": {
+          "default": "user_explicit",
+          "enum": [
+            "user_explicit",
+            "definition",
+            "schedule",
+            "growth",
+            "simulated_life"
+          ],
+          "title": "Source",
+          "type": "string"
+        },
+        "importance": {
+          "default": 0.5,
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Importance",
+          "type": "number"
+        },
+        "status": {
+          "default": "active",
+          "enum": [
+            "active",
+            "paused",
+            "completed",
+            "cancelled"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "created_at": {
+          "format": "date-time",
+          "title": "Created At",
+          "type": "string"
+        },
+        "deadline": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Deadline"
+        },
+        "progress": {
+          "default": 0,
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Progress",
+          "type": "number"
+        },
+        "evidence_ids": {
+          "items": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 5,
+          "title": "Evidence Ids",
+          "type": "array"
+        },
+        "activity": {
+          "default": "reading",
+          "enum": [
+            "idle",
+            "reading",
+            "resting",
+            "working",
+            "walking"
+          ],
+          "title": "Activity",
+          "type": "string"
+        },
+        "simulate": {
+          "default": false,
+          "title": "Simulate",
+          "type": "boolean"
+        },
+        "simulated_hours": {
+          "default": 0,
+          "maximum": 100000,
+          "minimum": 0,
+          "title": "Simulated Hours",
+          "type": "number"
+        },
+        "simulation_milestone": {
+          "default": 0,
+          "maximum": 10000,
+          "minimum": 0,
+          "title": "Simulation Milestone",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "description"
+      ],
+      "title": "Goal",
+      "type": "object"
+    },
+    "Habit": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Id",
+          "type": "string"
+        },
+        "description": {
+          "maxLength": 500,
+          "minLength": 1,
+          "title": "Description",
+          "type": "string"
+        },
+        "activity": {
+          "default": "reading",
+          "enum": [
+            "idle",
+            "reading",
+            "resting",
+            "working",
+            "walking"
+          ],
+          "title": "Activity",
+          "type": "string"
+        },
+        "evidence_ids": {
+          "items": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 5,
+          "title": "Evidence Ids",
+          "type": "array"
+        },
+        "observed_days": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 30,
+          "title": "Observed Days",
+          "type": "array"
+        },
+        "established": {
+          "default": false,
+          "title": "Established",
+          "type": "boolean"
+        },
+        "strength": {
+          "default": 0,
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Strength",
+          "type": "number"
+        },
+        "source": {
+          "default": "user_explicit",
+          "enum": [
+            "user_explicit",
+            "simulated_life"
+          ],
+          "title": "Source",
+          "type": "string"
+        },
+        "last_observed_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Last Observed At"
+        }
+      },
+      "required": [
+        "id",
+        "description"
+      ],
+      "title": "Habit",
+      "type": "object"
+    },
+    "LifeState": {
+      "additionalProperties": false,
+      "properties": {
+        "activity": {
+          "default": "idle",
+          "enum": [
+            "idle",
+            "reading",
+            "resting",
+            "working",
+            "walking"
+          ],
+          "title": "Activity",
+          "type": "string"
+        },
+        "source": {
+          "const": "simulated_life",
+          "default": "simulated_life",
+          "title": "Source",
+          "type": "string"
+        },
+        "updated_at": {
+          "format": "date-time",
+          "title": "Updated At",
+          "type": "string"
+        },
+        "reason": {
+          "default": "",
+          "maxLength": 240,
+          "title": "Reason",
+          "type": "string"
+        }
+      },
+      "title": "LifeState",
+      "type": "object"
+    },
+    "Mood": {
+      "additionalProperties": false,
+      "properties": {
+        "label": {
+          "default": "neutral",
+          "maxLength": 80,
+          "title": "Label",
+          "type": "string"
+        },
+        "intensity": {
+          "default": 0,
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Intensity",
+          "type": "number"
+        },
+        "reason": {
+          "default": "",
+          "maxLength": 500,
+          "title": "Reason",
+          "type": "string"
+        },
+        "evidence_ids": {
+          "items": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 5,
+          "title": "Evidence Ids",
+          "type": "array"
+        },
+        "updated_at": {
+          "format": "date-time",
+          "title": "Updated At",
+          "type": "string"
+        },
+        "influenced_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Influenced At"
+        }
+      },
+      "title": "Mood",
+      "type": "object"
+    },
+    "Observation": {
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {
+          "const": 1,
+          "default": 1,
+          "title": "Schema Version",
+          "type": "integer"
+        },
+        "kind": {
+          "enum": [
+            "time",
+            "weather",
+            "schedule",
+            "location"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "source": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Source",
+          "type": "string"
+        },
+        "summary": {
+          "maxLength": 500,
+          "title": "Summary",
+          "type": "string"
+        },
+        "observed_at": {
+          "format": "date-time",
+          "title": "Observed At",
+          "type": "string"
+        },
+        "fetched_at": {
+          "format": "date-time",
+          "title": "Fetched At",
+          "type": "string"
+        },
+        "expires_at": {
+          "format": "date-time",
+          "title": "Expires At",
+          "type": "string"
+        },
+        "location_scope": {
+          "default": "",
+          "maxLength": 100,
+          "title": "Location Scope",
+          "type": "string"
+        },
+        "condition": {
+          "default": "unknown",
+          "enum": [
+            "unknown",
+            "clear",
+            "rain",
+            "snow",
+            "storm"
+          ],
+          "title": "Condition",
+          "type": "string"
+        },
+        "activity": {
+          "anyOf": [
+            {
+              "enum": [
+                "idle",
+                "reading",
+                "resting",
+                "working",
+                "walking"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Activity"
+        },
+        "availability": {
+          "default": "unknown",
+          "enum": [
+            "unknown",
+            "available",
+            "busy",
+            "unavailable"
+          ],
+          "title": "Availability",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "source",
+        "summary",
+        "observed_at",
+        "fetched_at",
+        "expires_at"
+      ],
+      "title": "Observation",
+      "type": "object"
+    },
+    "Settings": {
+      "additionalProperties": false,
+      "properties": {
+        "proactive_contact": {
+          "default": false,
+          "title": "Proactive Contact",
+          "type": "boolean"
+        },
+        "schedule_awareness": {
+          "default": false,
+          "title": "Schedule Awareness",
+          "type": "boolean"
+        },
+        "weather_awareness": {
+          "default": false,
+          "title": "Weather Awareness",
+          "type": "boolean"
+        },
+        "life_simulation": {
+          "default": false,
+          "title": "Life Simulation",
+          "type": "boolean"
+        },
+        "relationship_growth": {
+          "default": true,
+          "title": "Relationship Growth",
+          "type": "boolean"
+        },
+        "timezone": {
+          "default": "UTC",
+          "maxLength": 100,
+          "title": "Timezone",
+          "type": "string"
+        },
+        "quiet_start": {
+          "default": 22,
+          "maximum": 23,
+          "minimum": 0,
+          "title": "Quiet Start",
+          "type": "integer"
+        },
+        "quiet_end": {
+          "default": 8,
+          "maximum": 23,
+          "minimum": 0,
+          "title": "Quiet End",
+          "type": "integer"
+        },
+        "cooldown_seconds": {
+          "default": 21600,
+          "maximum": 604800,
+          "minimum": 3600,
+          "title": "Cooldown Seconds",
+          "type": "integer"
+        },
+        "recent_activity_seconds": {
+          "default": 3600,
+          "maximum": 86400,
+          "minimum": 300,
+          "title": "Recent Activity Seconds",
+          "type": "integer"
+        },
+        "max_contacts_per_day": {
+          "default": 2,
+          "maximum": 10,
+          "minimum": 1,
+          "title": "Max Contacts Per Day",
+          "type": "integer"
+        },
+        "availability": {
+          "default": "unknown",
+          "enum": [
+            "unknown",
+            "available",
+            "busy",
+            "unavailable"
+          ],
+          "title": "Availability",
+          "type": "string"
+        }
+      },
+      "title": "Settings",
+      "type": "object"
+    },
+    "Topic": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Id",
+          "type": "string"
+        },
+        "description": {
+          "maxLength": 500,
+          "minLength": 1,
+          "title": "Description",
+          "type": "string"
+        },
+        "relevance": {
+          "default": 0.5,
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Relevance",
+          "type": "number"
+        },
+        "priority": {
+          "default": 0.5,
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Priority",
+          "type": "number"
+        },
+        "cooldown_seconds": {
+          "default": 604800,
+          "maximum": 31536000,
+          "minimum": 86400,
+          "title": "Cooldown Seconds",
+          "type": "integer"
+        },
+        "status": {
+          "default": "open",
+          "enum": [
+            "open",
+            "resolved",
+            "dismissed"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "last_mentioned_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Last Mentioned At"
+        }
+      },
+      "required": [
+        "id",
+        "description"
+      ],
+      "title": "Topic",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": 1,
+      "default": 1,
+      "title": "Schema Version",
+      "type": "integer"
+    },
+    "character_id": {
+      "maxLength": 200,
+      "minLength": 1,
+      "title": "Character Id",
+      "type": "string"
+    },
+    "revision": {
+      "default": 1,
+      "minimum": 1,
+      "title": "Revision",
+      "type": "integer"
+    },
+    "settings": {
+      "$ref": "#/$defs/Settings"
+    },
+    "mood": {
+      "$ref": "#/$defs/Mood"
+    },
+    "goals": {
+      "items": {
+        "$ref": "#/$defs/Goal"
+      },
+      "maxItems": 30,
+      "title": "Goals",
+      "type": "array"
+    },
+    "habits": {
+      "items": {
+        "$ref": "#/$defs/Habit"
+      },
+      "maxItems": 20,
+      "title": "Habits",
+      "type": "array"
+    },
+    "topics": {
+      "items": {
+        "$ref": "#/$defs/Topic"
+      },
+      "maxItems": 30,
+      "title": "Topics",
+      "type": "array"
+    },
+    "life": {
+      "$ref": "#/$defs/LifeState"
+    },
+    "observations": {
+      "additionalProperties": {
+        "$ref": "#/$defs/Observation"
+      },
+      "maxProperties": 4,
+      "title": "Observations",
+      "type": "object"
+    },
+    "last_advanced_at": {
+      "format": "date-time",
+      "title": "Last Advanced At",
+      "type": "string"
+    },
+    "last_user_activity": {
+      "anyOf": [
+        {
+          "format": "date-time",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Last User Activity"
+    },
+    "last_contact_at": {
+      "anyOf": [
+        {
+          "format": "date-time",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Last Contact At"
+    },
+    "contact_day": {
+      "default": "",
+      "title": "Contact Day",
+      "type": "string"
+    },
+    "contacts_today": {
+      "default": 0,
+      "minimum": 0,
+      "title": "Contacts Today",
+      "type": "integer"
+    },
+    "pending_decision": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Decision"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "acknowledgements": {
+      "additionalProperties": {
+        "type": "boolean"
+      },
+      "maxProperties": 32,
+      "title": "Acknowledgements",
+      "type": "object"
+    },
+    "contacted_topics": {
+      "additionalProperties": {
+        "format": "date-time",
+        "type": "string"
+      },
+      "maxProperties": 60,
+      "title": "Contacted Topics",
+      "type": "object"
+    },
+    "simulated_memories": {
+      "items": {
+        "$ref": "#/$defs/Candidate"
+      },
+      "maxItems": 30,
+      "title": "Simulated Memories",
+      "type": "array"
+    }
+  },
+  "required": [
+    "character_id"
+  ],
+  "title": "CompanionState",
+  "type": "object",
+  "$schema": "https://json-schema.org/draft/2020-12/schema"
+}
