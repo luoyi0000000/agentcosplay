@@ -14,7 +14,7 @@ from pathlib import Path
 from urllib.parse import unquote, urlsplit
 
 ROOT = Path(__file__).resolve().parents[1]
-LOGO_SHA256 = "6705d3ecc42b9cebaaa4881faf0b57429275d8cc560845af438d20a3568a9ae1"
+LOGO_SHA256 = "038bd1960e363e0e01e7c7f7c0c6a9bf040206e16ba934c12e77424a241b5a44"
 
 
 def require(condition: bool, message: str) -> None:
