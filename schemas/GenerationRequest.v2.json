@@ -1,0 +1,49 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "intent": {
+      "default": "CASUAL_CHAT",
+      "enum": [
+        "CASUAL_CHAT",
+        "SOCIAL",
+        "EMOTIONAL_SUPPORT",
+        "FACTUAL_QA",
+        "EXPLANATION",
+        "ANALYSIS",
+        "CODING",
+        "WRITING",
+        "TRANSLATION",
+        "TOOL_TASK",
+        "CREATIVE"
+      ],
+      "title": "Intent",
+      "type": "string"
+    },
+    "explicit_format": {
+      "default": "natural",
+      "enum": [
+        "natural",
+        "json",
+        "code",
+        "verbatim"
+      ],
+      "title": "Explicit Format",
+      "type": "string"
+    },
+    "length_request": {
+      "default": "",
+      "maxLength": 200,
+      "title": "Length Request",
+      "type": "string"
+    },
+    "platform_constraints": {
+      "default": "",
+      "maxLength": 300,
+      "title": "Platform Constraints",
+      "type": "string"
+    }
+  },
+  "title": "GenerationRequest",
+  "type": "object",
+  "$schema": "https://json-schema.org/draft/2020-12/schema"
+}

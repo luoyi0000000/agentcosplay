@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import builtins
 import json
 import os
 import sqlite3
@@ -10,8 +11,15 @@ import threading
 import time
 from collections.abc import Iterator
 from contextlib import AbstractContextManager, contextmanager
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Protocol, cast
+from uuid import uuid4
+
+from pydantic import ValidationError
+
+from .models import CharacterState, Memory
+from .retrieval import normalize, tokens
 
 
 class Storage(Protocol):
@@ -21,9 +29,62 @@ class Storage(Protocol):
 
     def put(self, owner: str, collection: str, key: str, value: dict[str, Any]) -> None: ...
 
-    def list(self, owner: str, collection: str) -> list[dict[str, Any]]: ...
+    def list(self, owner: str, collection: str) -> builtins.list[dict[str, Any]]: ...
 
     def delete(self, owner: str, collection: str, key: str) -> None: ...
+
+    def memory_window(
+        self,
+        owner: str,
+        character_id: str,
+        *,
+        start: datetime | None,
+        end: datetime | None,
+        session_id: str | None,
+        real: bool,
+        include_archived: bool,
+        semantic_key: str | None,
+        kind: str | None,
+        limit: int,
+    ) -> builtins.list[dict[str, Any]]: ...
+
+    def memory_candidates(
+        self,
+        owner: str,
+        character_id: str,
+        query: str,
+        *,
+        session_id: str | None,
+        real: bool,
+        at: datetime,
+        include_archived: bool = False,
+        limit: int = 256,
+    ) -> builtins.list[tuple[dict[str, Any], float]]: ...
+
+    def memory_duplicates(
+        self,
+        owner: str,
+        character_id: str,
+        content: str,
+        kind: str,
+        source: str,
+        session_id: str | None,
+        since: datetime,
+    ) -> builtins.list[dict[str, Any]]: ...
+
+    def memory_related(
+        self,
+        owner: str,
+        character_id: str,
+        memory_id: str,
+    ) -> builtins.list[dict[str, Any]]: ...
+
+    def memory_stale(
+        self,
+        owner: str,
+        character_id: str,
+        before: datetime,
+    ) -> builtins.list[dict[str, Any]]: ...
 
     def close(self) -> None: ...
 
@@ -31,11 +92,13 @@ class Storage(Protocol):
 class SQLiteStorage:
     """A single-connection SQLite record store safe for shared-thread use."""
 
-    SCHEMA_VERSION = 1
+    SCHEMA_VERSION = 2
 
     def __init__(self, path: Path | str) -> None:
         self._lock = threading.RLock()
         self._transaction_depth = 0
+        self.fts_available = False
+        self.migration_backup: Path | None = None
         if str(path) != ":memory:":
             Path(path).parent.mkdir(mode=0o700, parents=True, exist_ok=True)
             try:
@@ -60,6 +123,16 @@ class SQLiteStorage:
             version = self._connection.execute("PRAGMA user_version").fetchone()[0]
             if version > self.SCHEMA_VERSION:
                 raise RuntimeError("Database schema is newer than supported")
+            if version == 1 and str(path) != ":memory:":
+                backup = Path(f"{path}.v1-backup-{uuid4().hex}.sqlite3")
+                descriptor = os.open(backup, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+                os.close(descriptor)
+                target = sqlite3.connect(backup)
+                try:
+                    self._connection.backup(target)
+                finally:
+                    target.close()
+                self.migration_backup = backup
             deadline = time.monotonic() + 5
             while True:
                 try:
@@ -96,10 +169,252 @@ class SQLiteStorage:
                         )
                         """
                     )
-                    self._connection.execute(f"PRAGMA user_version = {self.SCHEMA_VERSION}")
+                self._setup_memory_index(version < 2)
+                self._connection.execute(
+                    """CREATE UNIQUE INDEX IF NOT EXISTS raw_event_identity ON records(
+                        owner, json_extract(value, '$.character_id'),
+                        json_extract(value, '$.source_id'), json_extract(value, '$.source_event_id')
+                    ) WHERE collection = 'raw_event'"""
+                )
+                self._connection.execute(
+                    """CREATE UNIQUE INDEX IF NOT EXISTS active_fact_identity ON records(
+                        owner, json_extract(value, '$.character_id'),
+                        json_extract(value, '$.subject'), json_extract(value, '$.semantic_key')
+                    ) WHERE collection = 'fact' AND json_extract(value, '$.validity') = 'active'"""
+                )
+                self._connection.execute(f"PRAGMA user_version = {self.SCHEMA_VERSION}")
         except BaseException:
             self._connection.close()
             raise
+
+    def _setup_memory_index(self, backfill: bool) -> None:
+        self._connection.execute(
+            """CREATE TABLE IF NOT EXISTS memory_index (
+                id INTEGER PRIMARY KEY, owner TEXT NOT NULL, key TEXT NOT NULL,
+                character_id TEXT NOT NULL, kind TEXT NOT NULL, source TEXT NOT NULL,
+                session_id TEXT, status TEXT NOT NULL, created REAL NOT NULL,
+                observed REAL NOT NULL, expires REAL, importance REAL NOT NULL,
+                normalized TEXT NOT NULL, terms TEXT NOT NULL, promoted_from TEXT,
+                UNIQUE(owner, key))"""
+        )
+        for name, columns in (
+            ("memory_recent", "owner, character_id, status, kind, observed DESC"),
+            ("memory_important", "owner, character_id, status, kind, importance DESC"),
+            ("memory_duplicate", "owner, character_id, normalized, kind, source"),
+            ("memory_promoted", "owner, character_id, promoted_from"),
+        ):
+            self._connection.execute(
+                f"CREATE INDEX IF NOT EXISTS {name} ON memory_index({columns})"
+            )
+        self._connection.execute(
+            """CREATE TABLE IF NOT EXISTS memory_tokens (
+                owner TEXT NOT NULL, character_id TEXT NOT NULL, token TEXT NOT NULL,
+                memory_id INTEGER NOT NULL REFERENCES memory_index(id) ON DELETE CASCADE,
+                PRIMARY KEY(owner, character_id, token, memory_id)) WITHOUT ROWID"""
+        )
+        self._connection.execute(
+            "CREATE INDEX IF NOT EXISTS memory_tokens_id ON memory_tokens(memory_id)"
+        )
+        self._connection.execute(
+            "CREATE TABLE IF NOT EXISTS retrieval_meta (key TEXT PRIMARY KEY, value INTEGER)"
+        )
+        self._connection.execute("INSERT OR IGNORE INTO retrieval_meta VALUES ('fts_dirty', 1)")
+        try:
+            self._connection.execute(
+                "CREATE VIRTUAL TABLE IF NOT EXISTS memory_fts USING fts5(terms)"
+            )
+            self._connection.execute("SELECT rowid FROM memory_fts LIMIT 1").fetchall()
+            self.fts_available = True
+        except sqlite3.OperationalError as error:
+            if "no such module" not in str(error).lower():
+                raise
+        if backfill:
+            cursor = self._connection.execute(
+                "SELECT owner, collection, key, value FROM records "
+                "WHERE collection IN ('memory', 'state')"
+            )
+            for owner, collection, key, encoded in cursor.fetchall():
+                record_key = collection + ":" + key
+                try:
+                    original = self._decode(encoded)
+                except (ValueError, RuntimeError):
+                    self._migration_record(
+                        owner,
+                        "migration_original",
+                        record_key,
+                        {
+                            "raw_json": encoded,
+                        },
+                    )
+                    self._migration_record(
+                        owner,
+                        "migration_warning",
+                        record_key,
+                        {
+                            "collection": collection,
+                            "key": key,
+                            "reason": "Malformed legacy record retained unchanged and not indexed",
+                        },
+                    )
+                    continue
+                revoked = (
+                    {"scope", "shared_with", "recipients"}
+                    if collection == "memory"
+                    else {"known_characters", "shared_world_id"}
+                )
+                candidate = {k: v for k, v in original.items() if k not in revoked}
+                if collection == "memory":
+                    candidate["legacy_unverified"] = True
+                try:
+                    if collection == "memory":
+                        if (
+                            original.get("owner") != owner
+                            or original.get("id") != key
+                            or not original.get("created_at")
+                        ):
+                            raise ValueError("Legacy memory identity/time cannot be inferred")
+                        normalized = Memory.model_validate(candidate).model_dump(mode="json")
+                    else:
+                        if original.get("character_id") != key:
+                            raise ValueError("Legacy state identity cannot be inferred")
+                        normalized = CharacterState.model_validate(candidate).model_dump(
+                            mode="json"
+                        )
+                except (ValidationError, ValueError):
+                    self._migration_record(owner, "migration_original", record_key, original)
+                    self._migration_record(
+                        owner,
+                        "migration_warning",
+                        record_key,
+                        {
+                            "collection": collection,
+                            "key": key,
+                            "reason": "Legacy record cannot be safely interpreted; "
+                            "original retained; "
+                            "sharing and social fields revoked",
+                        },
+                    )
+                    self._connection.execute(
+                        "UPDATE records SET value = ? "
+                        "WHERE owner = ? AND collection = ? AND key = ?",
+                        (json.dumps(candidate, ensure_ascii=False), owner, collection, key),
+                    )
+                    continue
+                if original != normalized:
+                    self._migration_record(owner, "migration_original", record_key, original)
+                    self._migration_record(
+                        owner,
+                        "migration_warning",
+                        record_key,
+                        {
+                            "collection": collection,
+                            "key": key,
+                            "reason": "Legacy record normalized; original retained; "
+                            "memory unverified and sharing/social grants revoked",
+                        },
+                    )
+                    self._connection.execute(
+                        "UPDATE records SET value = ? "
+                        "WHERE owner = ? AND collection = ? AND key = ?",
+                        (json.dumps(normalized, ensure_ascii=False), owner, collection, key),
+                    )
+                if collection == "memory":
+                    self._index_memory(owner, key, normalized)
+        dirty = self._connection.execute(
+            "SELECT value FROM retrieval_meta WHERE key = 'fts_dirty'"
+        ).fetchone()[0]
+        if self.fts_available and dirty:
+            self._connection.execute("DELETE FROM memory_fts")
+            self._connection.execute(
+                "INSERT INTO memory_fts(rowid, terms) SELECT id, terms FROM memory_index"
+            )
+            self._connection.execute("UPDATE retrieval_meta SET value = 0 WHERE key = 'fts_dirty'")
+
+    def _migration_record(
+        self,
+        owner: str,
+        collection: str,
+        key: str,
+        value: dict[str, Any],
+    ) -> None:
+        self._connection.execute(
+            "INSERT OR IGNORE INTO records(owner, collection, key, value) VALUES (?, ?, ?, ?)",
+            (owner, collection, key, json.dumps(value, ensure_ascii=False)),
+        )
+
+    @staticmethod
+    def _timestamp(value: Any) -> float:
+        return datetime.fromisoformat(str(value).replace("Z", "+00:00")).timestamp()
+
+    def _remove_memory_index(self, owner: str, key: str) -> None:
+        row = self._connection.execute(
+            "SELECT id FROM memory_index WHERE owner = ? AND key = ?", (owner, key)
+        ).fetchone()
+        if row is None:
+            return
+        if self.fts_available:
+            self._connection.execute("DELETE FROM memory_fts WHERE rowid = ?", row)
+        else:
+            self._connection.execute("UPDATE retrieval_meta SET value = 1 WHERE key = 'fts_dirty'")
+        self._connection.execute("DELETE FROM memory_index WHERE id = ?", row)
+
+    def _index_memory(self, owner: str, key: str, value: dict[str, Any]) -> None:
+        if value.get("owner") != owner or value.get("status") == "forgotten":
+            self._remove_memory_index(owner, key)
+            return
+        content = value["content"]
+        term_set = tokens(content)
+        terms = " ".join(sorted(term_set))
+        existing = self._connection.execute(
+            "SELECT id, terms, character_id FROM memory_index WHERE owner = ? AND key = ?",
+            (owner, key),
+        ).fetchone()
+        self._connection.execute(
+            """INSERT INTO memory_index (
+                owner, key, character_id, kind, source, session_id, status, created,
+                observed, expires, importance, normalized, terms, promoted_from
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(owner, key) DO UPDATE SET
+                character_id=excluded.character_id, kind=excluded.kind, source=excluded.source,
+                session_id=excluded.session_id, status=excluded.status, created=excluded.created,
+                observed=excluded.observed, expires=excluded.expires,
+                importance=excluded.importance,
+                normalized=excluded.normalized, terms=excluded.terms,
+                promoted_from=excluded.promoted_from""",
+            (
+                owner,
+                key,
+                value["character_id"],
+                value["kind"],
+                value.get("source", "conversation"),
+                value.get("session_id"),
+                value.get("status", "active"),
+                self._timestamp(value["created_at"]),
+                self._timestamp(value.get("last_observed_at") or value["created_at"]),
+                self._timestamp(value["expires_at"]) if value.get("expires_at") else None,
+                value.get("importance", 0.5),
+                normalize(content),
+                terms,
+                value.get("promoted_from"),
+            ),
+        )
+        if existing and existing[1:] == (terms, value["character_id"]):
+            return
+        row = self._connection.execute(
+            "SELECT id FROM memory_index WHERE owner = ? AND key = ?", (owner, key)
+        ).fetchone()
+        self._connection.execute("DELETE FROM memory_tokens WHERE memory_id = ?", row)
+        self._connection.executemany(
+            "INSERT INTO memory_tokens VALUES (?, ?, ?, ?)",
+            ((owner, value["character_id"], token, row[0]) for token in term_set),
+        )
+        if self.fts_available:
+            self._connection.execute("DELETE FROM memory_fts WHERE rowid = ?", row)
+            self._connection.execute(
+                "INSERT INTO memory_fts(rowid, terms) VALUES (?, ?)", (row[0], terms)
+            )
+        else:
+            self._connection.execute("UPDATE retrieval_meta SET value = 1 WHERE key = 'fts_dirty'")
 
     @contextmanager
     def transaction(self) -> Iterator[None]:
@@ -139,7 +454,7 @@ class SQLiteStorage:
     def put(self, owner: str, collection: str, key: str, value: dict[str, Any]) -> None:
         self._validate(owner, collection, key)
         encoded = json.dumps(value, ensure_ascii=False, separators=(",", ":"))
-        with self._lock:
+        with self.transaction():
             self._connection.execute(
                 """
                 INSERT INTO records (owner, collection, key, value) VALUES (?, ?, ?, ?)
@@ -147,10 +462,10 @@ class SQLiteStorage:
                 """,
                 (owner, collection, key, encoded),
             )
-            if self._transaction_depth == 0:
-                self._connection.commit()
+            if collection == "memory":
+                self._index_memory(owner, key, value)
 
-    def list(self, owner: str, collection: str) -> list[dict[str, Any]]:
+    def list(self, owner: str, collection: str) -> builtins.list[dict[str, Any]]:
         self._validate(owner, collection)
         with self._lock:
             rows = self._connection.execute(
@@ -161,13 +476,199 @@ class SQLiteStorage:
 
     def delete(self, owner: str, collection: str, key: str) -> None:
         self._validate(owner, collection, key)
-        with self._lock:
+        with self.transaction():
             self._connection.execute(
                 "DELETE FROM records WHERE owner = ? AND collection = ? AND key = ?",
                 (owner, collection, key),
             )
-            if self._transaction_depth == 0:
-                self._connection.commit()
+            if collection == "memory":
+                self._remove_memory_index(owner, key)
+
+    def memory_window(
+        self,
+        owner: str,
+        character_id: str,
+        *,
+        start: datetime | None,
+        end: datetime | None,
+        session_id: str | None,
+        real: bool,
+        include_archived: bool,
+        semantic_key: str | None,
+        kind: str | None,
+        limit: int,
+    ) -> builtins.list[dict[str, Any]]:
+        clauses = [
+            "r.owner = ?",
+            "r.collection = 'memory'",
+            "i.character_id = ?",
+            "i.status IN ('active', 'archived')" if include_archived else "i.status = 'active'",
+            "(i.expires IS NULL OR i.expires > ?)",
+            "(i.session_id IS NULL OR i.session_id = ?)",
+        ]
+        from .models import now
+
+        args: builtins.list[Any] = [owner, character_id, now().timestamp(), session_id]
+        event_time = (
+            "julianday(COALESCE(json_extract(r.value,'$.event_at'), "
+            "json_extract(r.value,'$.created_at')))"
+        )
+        if not real:
+            clauses.append("i.kind != 'real_user'")
+        for boundary, op in ((start, ">="), (end, "<")):
+            if boundary:
+                clauses.append(f"{event_time} {op} julianday(?)")
+                args.append(boundary.isoformat())
+        if semantic_key:
+            clauses.append("json_extract(r.value,'$.semantic_key') = ?")
+            args.append(semantic_key)
+        if kind:
+            clauses.append("i.kind = ?")
+            args.append(kind)
+        args.append(max(1, min(1000, limit)))
+        with self._lock:
+            rows = self._connection.execute(
+                "SELECT r.value FROM records r JOIN memory_index i "
+                "ON i.owner=r.owner AND i.key=r.key "
+                + "WHERE "
+                + " AND ".join(clauses)
+                + f" ORDER BY {event_time} DESC, r.key LIMIT ?",
+                args,
+            )
+            return [json.loads(row[0]) for row in rows]
+
+    def memory_candidates(
+        self,
+        owner: str,
+        character_id: str,
+        query: str,
+        *,
+        session_id: str | None,
+        real: bool,
+        at: datetime,
+        include_archived: bool = False,
+        limit: int = 256,
+    ) -> builtins.list[tuple[dict[str, Any], float]]:
+        """Union bounded lexical, FTS, recent and important lanes before Python scoring."""
+        if not 1 <= limit <= 256 or len(query) > 8000:
+            raise ValueError("Memory candidates require limit 1..256 and query <=8000 characters")
+        wanted = sorted(tokens(query))[:64]
+        status = "m.status IN ('active', 'archived')" if include_archived else "m.status = 'active'"
+        where = (
+            f"m.owner = ? AND m.character_id = ? AND {status} "
+            f"AND m.kind {'=' if real else '!='} 'real_user' "
+            "AND (m.kind != 'session' OR m.session_id = ?) "
+            "AND (m.expires IS NULL OR m.expires > ?)"
+        )
+        parameters = (owner, character_id, session_id, at.timestamp())
+        lane = max(1, limit // 4)
+        ids: dict[int, float] = {}
+        with self._lock:
+            if wanted and self.fts_available:
+                expression = " OR ".join('"' + term.replace('"', '""') + '"' for term in wanted)
+                rows = self._connection.execute(
+                    "SELECT m.id FROM memory_fts JOIN memory_index m ON m.id = memory_fts.rowid "
+                    f"WHERE memory_fts MATCH ? AND {where} ORDER BY bm25(memory_fts), m.id LIMIT ?",
+                    (expression, *parameters, lane),
+                ).fetchall()
+                ids.update((row[0], 1 / (rank + 1)) for rank, row in enumerate(rows))
+            if wanted:
+                placeholders = ",".join("?" for _ in wanted)
+                rows = self._connection.execute(
+                    "SELECT m.id FROM memory_tokens t JOIN memory_index m ON m.id = t.memory_id "
+                    f"WHERE t.owner = ? AND t.character_id = ? AND t.token IN ({placeholders}) "
+                    f"AND {where} GROUP BY m.id ORDER BY count(*) DESC, m.importance DESC, "
+                    "m.observed DESC, m.id LIMIT ?",
+                    (
+                        owner,
+                        character_id,
+                        *wanted,
+                        *parameters,
+                        lane if self.fts_available else lane * 2,
+                    ),
+                ).fetchall()
+                for row in rows:
+                    ids.setdefault(row[0], 0)
+            for order in ("observed DESC, importance DESC", "importance DESC, observed DESC"):
+                rows = self._connection.execute(
+                    f"SELECT m.id FROM memory_index m WHERE {where} ORDER BY {order}, id LIMIT ?",
+                    (*parameters, lane),
+                ).fetchall()
+                for row in rows:
+                    ids.setdefault(row[0], 0)
+            selected = list(ids)[:limit]
+            if not selected:
+                return []
+            placeholders = ",".join("?" for _ in selected)
+            rows = self._connection.execute(
+                "SELECT r.value, m.id FROM memory_index m JOIN records r "
+                "ON r.owner = m.owner AND r.collection = 'memory' AND r.key = m.key "
+                f"WHERE m.id IN ({placeholders})",
+                selected,
+            ).fetchall()
+        return [(self._decode(value), ids[key]) for value, key in rows]
+
+    def memory_duplicates(
+        self,
+        owner: str,
+        character_id: str,
+        content: str,
+        kind: str,
+        source: str,
+        session_id: str | None,
+        since: datetime,
+    ) -> builtins.list[dict[str, Any]]:
+        with self._lock:
+            rows = self._connection.execute(
+                """SELECT r.value FROM memory_index m JOIN records r
+                ON r.owner = m.owner AND r.collection = 'memory' AND r.key = m.key
+                WHERE m.owner = ? AND m.character_id = ? AND m.normalized = ?
+                AND m.kind = ? AND m.source = ? AND m.session_id IS ? AND m.status = 'active'
+                AND m.observed >= ? ORDER BY m.observed DESC LIMIT 8""",
+                (
+                    owner,
+                    character_id,
+                    normalize(content),
+                    kind,
+                    source,
+                    session_id,
+                    since.timestamp(),
+                ),
+            ).fetchall()
+        return [self._decode(row[0]) for row in rows]
+
+    def memory_related(
+        self,
+        owner: str,
+        character_id: str,
+        memory_id: str,
+    ) -> builtins.list[dict[str, Any]]:
+        with self._lock:
+            rows = self._connection.execute(
+                """SELECT r.value FROM memory_index m JOIN records r
+                ON r.owner = m.owner AND r.collection = 'memory' AND r.key = m.key
+                WHERE m.owner = ? AND m.character_id = ? AND (m.key = ? OR m.promoted_from = ?)""",
+                (owner, character_id, memory_id, memory_id),
+            ).fetchall()
+        return [self._decode(row[0]) for row in rows]
+
+    def memory_stale(
+        self,
+        owner: str,
+        character_id: str,
+        before: datetime,
+    ) -> builtins.list[dict[str, Any]]:
+        with self._lock:
+            rows = self._connection.execute(
+                """SELECT r.value FROM memory_index m JOIN records r
+                ON r.owner = m.owner AND r.collection = 'memory' AND r.key = m.key
+                WHERE m.owner = ? AND m.character_id = ? AND m.status = 'active'
+                AND m.kind = 'character_long_term' AND m.importance < 0.7 AND m.observed < ?
+                AND m.source IN ('conversation', 'model', 'inferred', 'simulated_life')
+                ORDER BY m.observed LIMIT 100""",
+                (owner, character_id, before.timestamp()),
+            ).fetchall()
+        return [self._decode(row[0]) for row in rows]
 
     def close(self) -> None:
         with self._lock:

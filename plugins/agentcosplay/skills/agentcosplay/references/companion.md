@@ -1,9 +1,5 @@
 # 陪伴状态
 
-使用 companion_control 管理情绪、目标、习惯、未完成话题与功能开关，按发现的 schema 填操作。配置开关、目标和免打扰必须来自用户意图；不能为沉浸感自行开启。
+companion_control 在 OOC 先读取，再携 operation_id 与 allowlist 更新设置。自动目标/习惯/话题使用有证据的 companion_update，已有目标修改须先读 grant；情绪使用 affect_effects。Affect、Attention、Embodiment 与人格分开，不能为沉浸感自行开启主动联系或生活模拟。
 
-Mood 是会衰减的暂态，不改核心人格；习惯需跨日重复证据逐渐形成。记录已发生的对话活动，避免把未发送回复记成共同事件。目标只有明确进度来源才能更新。
-
-life_simulation 开启后由 Runtime 推进低风险白名单日常。普通当前活动留在 State；长期累计且影响目标/习惯的模拟事件才以 simulated_life 存储。角色可把它表达为虚构世界的日常，但不得说用户在场、冒充现实事实或制造事故、疾病、婚姻等重大事件。
-
-runtime_context 返回当前必要投影；不把整个生活历史复制进 prompt。Self Model 引用已有资料，不另写一份人格真相。
+模拟仅白名单日常，永远标 simulated_life；不制造疾病、冲突、恋爱或用户在场经历。runtime_doctor 的 maintenance_operation_id 驱动一次统一维护，由宿主定时器安排。Daily reflection 是派生叙事，不能自动成为证据。数字内部状态由 Runtime 投影成语义，不把整库塞进 prompt。

@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-import builtins
 from typing import Any
 
+from .compiler import compile
 from .models import CharacterDefinition, CharacterState, Fact, Relationship
 from .storage import Storage
 
@@ -31,6 +31,7 @@ class Characters:
                 self.owner, "definition", definition.id, definition.model_dump(mode="json")
             )
             self.save_state(CharacterState(character_id=definition.id))
+            compile(self.storage, self.owner, definition)
         return definition
 
     def get(self, character_id: str) -> CharacterDefinition:
@@ -65,7 +66,15 @@ class Characters:
         facts: dict[str, Fact] | None = None,
         **changes: Any,
     ) -> CharacterDefinition:
-        if set(changes) - {"name", "origin", "mode", "default_task_mode", "growth"}:
+        if set(changes) - {
+            "name",
+            "origin",
+            "mode",
+            "default_task_mode",
+            "growth",
+            "voice",
+            "embodiment",
+        }:
             raise ValueError("Only definition configuration may be edited here")
         with self.storage.transaction():
             old = self.get(character_id)
@@ -90,29 +99,18 @@ class Characters:
             self.storage.put(
                 self.owner, "definition", character_id, updated.model_dump(mode="json")
             )
+            compiled = compile(self.storage, self.owner, updated)
+            if compiled.character_version != updated.revision:
+                raise ValueError("Definition compilation failed; last known good remains active")
             return updated
 
     def configure_relationship(
         self, character_id: str, relationship: Relationship, expected_revision: int
     ) -> CharacterState:
-        """Explicit OOC editing; callers enforce the session's configuration mode."""
-        with self.storage.transaction():
-            state = self.state(character_id)
-            if state.revision != expected_revision:
-                raise ValueError("Revision conflict; reload state")
-            state.relationship = Relationship.model_validate(relationship.model_dump())
-            state.revision += 1
-            self.save_state(state)
-            return state
+        """Compatibility entry; all relationship writes route to the single engine."""
+        from .knowledge import Knowledge
+        from .memory import Memories
 
-    def set_known_characters(
-        self, character_id: str, other_ids: builtins.list[str]
-    ) -> CharacterState:
-        with self.storage.transaction():
-            state = self.state(character_id)
-            for other in other_ids:
-                self.get(other)
-            state.known_characters = list(dict.fromkeys(other_ids))
-            state.revision += 1
-            self.save_state(state)
-            return state
+        return Knowledge(
+            self.storage, self.owner, self, Memories(self.storage, self.owner, self)
+        ).relationship.configure(character_id, relationship, expected_revision)

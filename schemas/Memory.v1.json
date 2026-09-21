@@ -20,26 +20,24 @@
       "type": "string"
     },
     "kind": {
+      "anyOf": [
+        {
+          "enum": [
+            "session",
+            "short_term",
+            "character_long_term",
+            "relationship",
+            "real_user"
+          ],
+          "type": "string"
+        },
+        {
+          "const": "shared_roleplay",
+          "type": "string"
+        }
+      ],
       "default": "character_long_term",
-      "enum": [
-        "session",
-        "short_term",
-        "character_long_term",
-        "relationship",
-        "shared_roleplay",
-        "real_user"
-      ],
-      "title": "Kind",
-      "type": "string"
-    },
-    "scope": {
-      "default": "private",
-      "enum": [
-        "private",
-        "shared"
-      ],
-      "title": "Scope",
-      "type": "string"
+      "title": "Kind"
     },
     "session_id": {
       "anyOf": [
@@ -74,6 +72,89 @@
       "title": "Content",
       "type": "string"
     },
+    "semantic_key": {
+      "anyOf": [
+        {
+          "maxLength": 200,
+          "minLength": 1,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Semantic Key"
+    },
+    "durability": {
+      "default": "persistent",
+      "enum": [
+        "temporary",
+        "persistent",
+        "explicit"
+      ],
+      "title": "Durability",
+      "type": "string"
+    },
+    "activation": {
+      "default": 0,
+      "maximum": 1,
+      "minimum": 0,
+      "title": "Activation",
+      "type": "number"
+    },
+    "reinforcement": {
+      "default": 0,
+      "minimum": 0,
+      "title": "Reinforcement",
+      "type": "integer"
+    },
+    "last_injected_at": {
+      "anyOf": [
+        {
+          "format": "date-time",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Last Injected At"
+    },
+    "useful_count": {
+      "default": 0,
+      "minimum": 0,
+      "title": "Useful Count",
+      "type": "integer"
+    },
+    "event_at": {
+      "anyOf": [
+        {
+          "format": "date-time",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Event At"
+    },
+    "superseded_by": {
+      "anyOf": [
+        {
+          "maxLength": 200,
+          "minLength": 1,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Superseded By"
+    },
     "importance": {
       "default": 0.5,
       "maximum": 1,
@@ -93,6 +174,46 @@
       "maxLength": 2000,
       "title": "Source",
       "type": "string"
+    },
+    "evidence_refs": {
+      "items": {
+        "maxLength": 200,
+        "minLength": 1,
+        "type": "string"
+      },
+      "maxItems": 20,
+      "title": "Evidence Refs",
+      "type": "array"
+    },
+    "authority": {
+      "default": "INFERRED",
+      "enum": [
+        "USER_EXPLICIT",
+        "USER_MANUAL",
+        "ADMIN_CONFIG",
+        "TOOL_VERIFIED",
+        "HOST_OBSERVED",
+        "MODEL_DERIVED",
+        "INFERRED",
+        "SIMULATED"
+      ],
+      "title": "Authority",
+      "type": "string"
+    },
+    "sensitivity": {
+      "default": "private",
+      "enum": [
+        "public",
+        "private",
+        "sensitive"
+      ],
+      "title": "Sensitivity",
+      "type": "string"
+    },
+    "legacy_unverified": {
+      "default": false,
+      "title": "Legacy Unverified",
+      "type": "boolean"
     },
     "created_at": {
       "format": "date-time",
@@ -129,21 +250,52 @@
       "default": "active",
       "enum": [
         "active",
+        "archived",
         "expired",
         "forgotten"
       ],
       "title": "Status",
       "type": "string"
     },
-    "shared_with": {
+    "occurrences": {
+      "default": 1,
+      "minimum": 1,
+      "title": "Occurrences",
+      "type": "integer"
+    },
+    "last_observed_at": {
+      "anyOf": [
+        {
+          "format": "date-time",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Last Observed At"
+    },
+    "observation_turn_ids": {
       "items": {
-        "maxLength": 200,
-        "minLength": 1,
         "type": "string"
       },
-      "maxItems": 100,
-      "title": "Shared With",
+      "maxItems": 20,
+      "title": "Observation Turn Ids",
       "type": "array"
+    },
+    "consolidated_at": {
+      "anyOf": [
+        {
+          "format": "date-time",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Consolidated At"
     },
     "promoted_from": {
       "anyOf": [

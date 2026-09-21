@@ -8,14 +8,15 @@ from typing import Literal, Protocol, Self
 
 from pydantic import AwareDatetime, Field, model_validator
 
-from .models import Model, now
+from .models import Model, Score, now
 
-Activity = Literal["idle", "reading", "resting", "working", "walking"]
+Activity = Literal["idle", "reading", "resting", "working", "walking", "eating"]
 Kind = Literal["time", "weather", "schedule", "location"]
 
 
 class Observation(Model):
     schema_version: Literal[1] = 1
+    confidence: Score = 1
     kind: Kind
     source: str = Field(min_length=1, max_length=200)
     summary: str = Field(max_length=500)

@@ -1,0 +1,103 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "intent": {
+      "default": "GENERAL",
+      "enum": [
+        "CURRENT_STATE",
+        "RECENT",
+        "TIME_WINDOW",
+        "AUTOBIOGRAPHICAL",
+        "SHARED_EXPERIENCE",
+        "RELATIONSHIP",
+        "USER_FACT",
+        "USER_PREFERENCE",
+        "OPEN_LOOP",
+        "GOAL",
+        "SIMULATED_LIFE",
+        "EXACT_RECALL",
+        "EXACT_QUOTE",
+        "GENERAL"
+      ],
+      "title": "Intent",
+      "type": "string"
+    },
+    "start": {
+      "anyOf": [
+        {
+          "format": "date-time",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Start"
+    },
+    "end": {
+      "anyOf": [
+        {
+          "format": "date-time",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "End"
+    },
+    "relative_window": {
+      "anyOf": [
+        {
+          "enum": [
+            "today",
+            "yesterday",
+            "last_week"
+          ],
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Relative Window"
+    },
+    "timezone": {
+      "default": "UTC",
+      "title": "Timezone",
+      "type": "string"
+    },
+    "semantic_key": {
+      "anyOf": [
+        {
+          "maxLength": 200,
+          "minLength": 1,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Semantic Key"
+    },
+    "include_archived": {
+      "default": false,
+      "title": "Include Archived",
+      "type": "boolean"
+    },
+    "limit": {
+      "default": 20,
+      "maximum": 100,
+      "minimum": 1,
+      "title": "Limit",
+      "type": "integer"
+    }
+  },
+  "title": "RecallRequest",
+  "type": "object",
+  "$schema": "https://json-schema.org/draft/2020-12/schema"
+}

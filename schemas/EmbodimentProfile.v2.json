@@ -1,0 +1,54 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "enabled": {
+      "default": false,
+      "title": "Enabled",
+      "type": "boolean"
+    },
+    "sleep_enabled": {
+      "default": false,
+      "title": "Sleep Enabled",
+      "type": "boolean"
+    },
+    "hunger_enabled": {
+      "default": false,
+      "title": "Hunger Enabled",
+      "type": "boolean"
+    },
+    "physical_discomfort_enabled": {
+      "default": false,
+      "title": "Physical Discomfort Enabled",
+      "type": "boolean"
+    },
+    "weather_sensitivity": {
+      "default": 0,
+      "maximum": 1,
+      "minimum": 0,
+      "title": "Weather Sensitivity",
+      "type": "number"
+    },
+    "social_capacity_enabled": {
+      "default": false,
+      "title": "Social Capacity Enabled",
+      "type": "boolean"
+    },
+    "custom_axes": {
+      "additionalProperties": {
+        "maximum": 1,
+        "minimum": 0,
+        "type": "number"
+      },
+      "maxProperties": 10,
+      "propertyNames": {
+        "maxLength": 200,
+        "minLength": 1
+      },
+      "title": "Custom Axes",
+      "type": "object"
+    }
+  },
+  "title": "EmbodimentProfile",
+  "type": "object",
+  "$schema": "https://json-schema.org/draft/2020-12/schema"
+}

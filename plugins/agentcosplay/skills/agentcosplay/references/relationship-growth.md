@@ -1,7 +1,5 @@
 # 关系与成长
 
-只有实际长期互动才逐渐成长。自动关系变化需至少三个不同已提交回合的活跃持久记忆证据，逐级变化并受 mutability 限速。人格/世界变化不能覆盖已有 Definition；短期、现实用户、模拟生活记忆不能作为真实关系互动证据。
+Relationship Engine 是关系权威，缺席不能降低 trust。显式配置读 character_read(session_id=OOC会话) 的 state allowlist 再修改，不能让关系直接改写人格。
 
-携带 evidence_ids；portable_summary 只描述可携带的特质，不复制私人事件。relationship_growth 关闭时不提出自动关系变化；用户 OOC 显式改配置是另一操作。
-
-known_characters 只表示认识，不授予记忆访问。分享要用户明确指定 memory 与接收角色，不生成共同记忆池。
+长期变化通过 turn_commit.proposal.growth_proposals，至少跨三天直接用户证据。一次风格要求仅作用本轮；助手历史和模拟经历不能当成长证据。高影响候选用 growth_control 的 preview/history 审阅，用户明确批准才 approve；reject/rollback 也要先获得对应 allowlist。回滚不删除证据并设冷却。Definition 基线不被自动成长覆盖。

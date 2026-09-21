@@ -37,3 +37,8 @@ description: 在启用 agentcosplay、开始角色对话、创建/切换人物�
 | 主动联系、免打扰、定时唤醒 | [proactive](references/proactive.md) |
 | 时间、天气、日程、位置 | [providers](references/providers.md) |
 | 导入、导出、版本迁移 | [migration](references/migration.md) |
+
+| 任务表达与上下文预算 | [context](references/context.md) |
+| 图像识别与视觉原型 | [perception](references/perception.md) |
+| 跨平台身份与陌生消息 | [identity-binding](references/identity-binding.md) |
+| 安装诊断与恢复 | [diagnostics](references/diagnostics.md) |

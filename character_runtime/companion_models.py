@@ -110,6 +110,7 @@ class Habit(HabitUpdate):
 
 
 class Topic(Model):
+    evidence_ids: list[Identifier] = Field(default_factory=list, max_length=10)
     id: Identifier
     description: str = Field(min_length=1, max_length=500)
     relevance: Score = 0.5
@@ -120,6 +121,7 @@ class Topic(Model):
 
 
 class TopicUpdate(Model):
+    evidence_ids: list[Identifier] = Field(default_factory=list, max_length=10)
     id: Identifier
     description: str = Field(min_length=1, max_length=500)
     relevance: Score = 0.5
@@ -131,6 +133,12 @@ class TopicUpdate(Model):
 
 class LifeState(Model):
     activity: Activity = "idle"
+    current_process: str = Field(default="daily_routine", max_length=100)
+    current_phase: str = Field(default="idle", max_length=100)
+    started_at: AwareDatetime = Field(default_factory=now)
+    expected_end: AwareDatetime | None = None
+    next_decision_after: AwareDatetime | None = None
+    confidence: Score = 0.5
     source: Literal["simulated_life"] = "simulated_life"
     updated_at: AwareDatetime = Field(default_factory=now)
     reason: str = Field(default="", max_length=240)
@@ -139,8 +147,14 @@ class LifeState(Model):
 class Decision(Model):
     id: Identifier = Field(default_factory=new_id)
     should_contact: bool = False
+    # Old pending records have no phase: they may already have reached a gateway.
+    status: Literal[
+        "reserved", "generation_requested", "delivery_pending", "delivered", "failed", "unknown"
+    ] = "unknown"
+    claim_id: Identifier | None = None
+    topic_fingerprint: str = Field(default="", max_length=64)
     reason: str = Field(default="", max_length=240)
-    topic: str = Field(default="", max_length=240)
+    topic: str = Field(default="", max_length=500)
     topic_id: str = Field(default="", max_length=220)
     urgency: Literal["low", "normal", "high"] = "low"
     context: dict[str, str] = Field(default_factory=dict, max_length=5)

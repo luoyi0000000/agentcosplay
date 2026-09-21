@@ -1,0 +1,105 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "verbosity_default": {
+      "default": "balanced",
+      "enum": [
+        "brief",
+        "balanced",
+        "detailed"
+      ],
+      "title": "Verbosity Default",
+      "type": "string"
+    },
+    "sentence_length": {
+      "default": "varied",
+      "enum": [
+        "short",
+        "varied",
+        "long"
+      ],
+      "title": "Sentence Length",
+      "type": "string"
+    },
+    "directness": {
+      "default": "direct",
+      "enum": [
+        "gentle",
+        "direct",
+        "blunt"
+      ],
+      "title": "Directness",
+      "type": "string"
+    },
+    "addressing_style": {
+      "default": "natural",
+      "maxLength": 300,
+      "title": "Addressing Style",
+      "type": "string"
+    },
+    "self_reference_style": {
+      "default": "natural",
+      "maxLength": 300,
+      "title": "Self Reference Style",
+      "type": "string"
+    },
+    "humor_style": {
+      "default": "character-appropriate",
+      "maxLength": 300,
+      "title": "Humor Style",
+      "type": "string"
+    },
+    "emotional_expressiveness": {
+      "default": "balanced",
+      "enum": [
+        "reserved",
+        "balanced",
+        "expressive"
+      ],
+      "title": "Emotional Expressiveness",
+      "type": "string"
+    },
+    "catchphrases": {
+      "items": {
+        "maxLength": 4000,
+        "minLength": 1,
+        "type": "string"
+      },
+      "maxItems": 8,
+      "title": "Catchphrases",
+      "type": "array"
+    },
+    "stage_direction_policy": {
+      "default": "occasional",
+      "enum": [
+        "none",
+        "occasional",
+        "expressive"
+      ],
+      "title": "Stage Direction Policy",
+      "type": "string"
+    },
+    "repetition_tolerance": {
+      "default": "low",
+      "enum": [
+        "low",
+        "normal"
+      ],
+      "title": "Repetition Tolerance",
+      "type": "string"
+    },
+    "dialogue_examples": {
+      "items": {
+        "maxLength": 4000,
+        "minLength": 1,
+        "type": "string"
+      },
+      "maxItems": 10,
+      "title": "Dialogue Examples",
+      "type": "array"
+    }
+  },
+  "title": "VoiceProfile",
+  "type": "object",
+  "$schema": "https://json-schema.org/draft/2020-12/schema"
+}

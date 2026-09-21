@@ -5,12 +5,18 @@ from datetime import datetime
 from typing import Any
 
 from .characters import Characters
+from .cognition import expression
 from .companion import Companion
-from .companion_models import CompanionUpdate
+from .compiler import compile
 from .context import project_context
-from .growth import grow
+from .identity import resolve
+from .knowledge import Knowledge
+from .knowledge_models import TurnProposal
+from .lifelike import interaction
+from .lifelike_models import InteractionRequest
 from .memory import Memories
-from .models import Candidate, GrowthProposal, Session, TaskMode, now
+from .models import Session, TaskMode, VoiceProfile, now
+from .persistence_models import GenerationRequest
 from .providers import Provider, SystemTimeProvider
 from .rules import BASE_RULES, MODE_RULES, TASK_RULES
 from .storage import Storage
@@ -29,7 +35,8 @@ class Runtime:
             raise ValueError("A valid authenticated owner is required")
         self.storage, self.owner = storage, owner
         self.characters = Characters(storage, owner)
-        self.memory = Memories(storage, owner, self.characters)
+        self.memory = Memories(storage, owner, self.characters, clock)
+        self.knowledge = Knowledge(storage, owner, self.characters, self.memory, clock)
         self.companion = Companion(storage, owner, self.characters, clock)
         self.providers = (SystemTimeProvider(clock), *providers)
 
@@ -37,8 +44,6 @@ class Runtime:
         with self.storage.transaction():
             self.companion.refresh(character_id, self.providers)
             self.companion.advance(character_id)
-            for candidate in self.companion.drain_simulated_memories(character_id):
-                self.memory.store(character_id, candidate)
 
     def set_default(self, character_id: str | None) -> None:
         if character_id is not None:
@@ -53,12 +58,28 @@ class Runtime:
         self.storage.put(self.owner, "route", project, {"character_id": character_id})
 
     def open_session(
-        self, session_id: str, *, character_id: str | None = None, project: str | None = None
+        self,
+        session_id: str,
+        *,
+        character_id: str | None = None,
+        project: str | None = None,
+        host: str = "",
+        platform: str = "",
+        actor_id: str = "",
     ) -> Session:
         with self.storage.transaction():
+            binding = (
+                resolve(self.storage, self.owner, host, platform, actor_id)
+                if any((host, platform, actor_id))
+                else None
+            )
+            verified = not any((host, platform, actor_id)) or binding is not None
             existing = self.storage.get(self.owner, "session", session_id)
             if existing is not None:
-                return Session.model_validate(existing)
+                active = Session.model_validate(existing)
+                if active.identity_binding != binding or active.identity_verified != verified:
+                    raise ValueError("Session identity changed; create a new session after binding")
+                return active
             if character_id is None:
                 route = self.storage.get(self.owner, "route", project) if project else None
                 if route is None:
@@ -66,7 +87,13 @@ class Runtime:
                 character_id = route.get("character_id") if route else None
             if character_id is not None:
                 self.characters.get(character_id)
-            session = Session(id=session_id, character_id=character_id, project=project)
+            session = Session(
+                id=session_id,
+                character_id=character_id if verified else None,
+                project=project,
+                identity_verified=verified,
+                identity_binding=binding,
+            )
             self._save_session(session)
             return session
 
@@ -89,6 +116,8 @@ class Runtime:
     ) -> Session:
         with self.storage.transaction():
             session = self.session(session_id)
+            if not session.identity_verified:
+                raise ValueError("Unresolved identity cannot activate a private character")
             if action == "activate":
                 if character_id is None:
                     raise ValueError("Choose a character to activate")
@@ -120,6 +149,8 @@ class Runtime:
         *,
         include_companion: bool = True,
         include_self_model: bool = True,
+        generation: GenerationRequest | None = None,
+        interaction_request: InteractionRequest | None = None,
     ) -> dict[str, Any]:
         if len(query) > 4000:
             raise ValueError("Context query must be at most 4000 characters")
@@ -141,6 +172,7 @@ class Runtime:
                     "persistence_available": True,
                 }
                 return result
+            self.knowledge.scope(session_id)
             definition = self.characters.get(session.character_id)
             self.advance(definition.id)
             mode = session.task_mode or session.mode_override or definition.default_task_mode
@@ -155,107 +187,52 @@ class Runtime:
                 ],
                 effective_mode=mode,
             )
+            result["state"]["relationship"] = self.knowledge.relationship.projection(definition.id)
+            growth_version, overlay = self.knowledge.growth.current(definition.id)
+            effective_voice = VoiceProfile.model_validate(
+                definition.voice.model_dump() | overlay.get("voice", {})
+            )
+            result["expression_policy"] = expression(
+                generation or GenerationRequest(),
+                effective_voice,
+                result["state"]["relationship"],
+                mode,
+            )
             result["rules"] += [MODE_RULES[definition.mode], TASK_RULES[mode]]
             if session.ooc:
                 result["rules"].append(
                     "User explicitly entered OOC; discuss configuration plainly."
                 )
-            result = project_context(result, query)
             if include_companion:
                 result["companion"] = self.companion.context(definition.id, query)
-                result["self_model"].update(
-                    current_goals="/companion/goals",
-                    current_mood="/companion/mood",
-                    habits="/companion/habits",
-                )
-            if not include_self_model:
-                result.pop("self_model")
-            return result
-
-    def commit_turn(
-        self,
-        session_id: str,
-        turn_id: str,
-        candidates: list[Candidate],
-        growth: GrowthProposal | None = None,
-        companion: CompanionUpdate | None = None,
-    ) -> dict[str, Any]:
-        if not turn_id.strip() or len(turn_id) > 100 or len(candidates) > 20:
-            raise ValueError("A short unique turn ID and at most 20 candidates are required")
-        with self.storage.transaction():
-            session = self.session(session_id)
-            if session.character_id is None or session.ooc:
-                raise ValueError("Roleplay turn commits require an active character outside OOC")
-            # Length-prefixed session component avoids ambiguous concatenation collisions.
-            receipt_id = f"{len(session_id)}:{session_id}:{turn_id}"
-            previous = self.storage.get(self.owner, "turn", receipt_id)
-            if previous is not None:
-                if previous["character_id"] != session.character_id:
-                    raise ValueError("Turn ID belongs to another character; use a fresh ID")
-                return previous
-            for candidate in candidates:
-                if candidate.kind == "real_user":
-                    raise ValueError("Automatic memory cannot create real-user facts")
-            definition = self.characters.get(session.character_id)
-            state = self.characters.state(session.character_id)
-            if companion and companion.settings:
-                raise ValueError("Companion settings require explicit OOC configuration")
-            if growth and not self.companion.get(definition.id).settings.relationship_growth:
-                if any(v is not None for v in (growth.stage, growth.trust, growth.familiarity)):
-                    raise ValueError("Automatic relationship growth is disabled")
-            if growth:
-                evidence_turns: set[str] = set()
-                for memory_id in growth.evidence_ids:
-                    evidence = self.memory.owned(definition.id, memory_id)
-                    if evidence.source == "simulated_life":
-                        raise ValueError("Simulated life is not evidence of user interaction")
-                    if evidence.status != "active" or (
-                        evidence.expires_at and evidence.expires_at <= now()
-                    ):
-                        raise ValueError("Growth evidence must be active")
-                    if evidence.kind not in (
-                        "character_long_term",
-                        "relationship",
-                        "shared_roleplay",
-                    ):
-                        raise ValueError("Growth evidence must be persistent character memory")
-                    if evidence.turn_id:
-                        receipt = self.storage.get(self.owner, "turn", evidence.turn_id)
-                        if (
-                            receipt
-                            and receipt.get("character_id") == definition.id
-                            and evidence.id in receipt.get("memory_ids", [])
-                            and receipt.get("turn_count", 0)
-                            > state.last_growth_turn.get("relationship", 0)
-                        ):
-                            evidence_turns.add(evidence.turn_id)
-                relationship_changes = any(
-                    target is not None and target != getattr(state.relationship, field)
-                    for field, target in (
-                        ("stage", growth.stage),
-                        ("trust", growth.trust),
-                        ("familiarity", growth.familiarity),
-                    )
-                )
-                if relationship_changes and len(evidence_turns) < 3:
-                    raise ValueError("Relationship growth needs evidence from three distinct turns")
-            state.turn_count += 1
-            state = grow(definition, state, growth)
-            memories = [
-                self.memory.store(definition.id, c, session.id, turn_id=receipt_id)
-                for c in candidates
-                if c.importance >= 0.3 and c.confidence >= 0.5
+            result.setdefault("companion", {}).update(
+                self.knowledge.lifelike.projection(definition.id)
+            )
+            result["interaction"] = interaction(interaction_request or InteractionRequest())
+            result["perception"] = [
+                p
+                for p in self.knowledge.records("perception", definition.id)
+                if p.get("expires_at", "") > self.companion.clock().isoformat()
             ]
-            state.revision += 1
-            self.characters.save_state(state)
-            if companion:
-                self.companion.update(definition.id, companion)
-            self.companion.record_activity(definition.id)
-            result = {
-                "character_id": definition.id,
-                "memory_ids": [m.id for m in memories],
-                "turn_count": state.turn_count,
-                "state_revision": state.revision,
-            }
-            self.storage.put(self.owner, "turn", receipt_id, result)
+            result["facts"] = [
+                f
+                for f in self.knowledge.records("fact", definition.id)
+                if f.get("validity") == "active" and f.get("subject") == "character"
+            ]
+            return project_context(
+                result,
+                query,
+                compiled=compile(self.storage, self.owner, definition, growth_version, overlay),
+            )
+
+    def commit_turn(self, session_id: str, proposal: TurnProposal) -> dict[str, Any]:
+        with self.storage.transaction():
+            result = self.knowledge.commit(session_id, proposal)
+            # Activity refresh is idempotent per operation too.
+            marker = f"{result['character_id']}:{proposal.operation_id}"
+            if self.storage.get(self.owner, "activity_receipt", marker) is None:
+                self.companion.record_activity(result["character_id"])
+                self.storage.put(
+                    self.owner, "activity_receipt", marker, {"character_id": result["character_id"]}
+                )
             return result

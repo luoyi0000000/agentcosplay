@@ -19,10 +19,14 @@ jobs:
         with:
           version: '0.11.7'
           python-version: '3.11'
+      - run: uv run --no-project python -c "import tomllib; tomllib.load(open('uv.lock', 'rb'))"
       - run: uv sync --locked
-      - run: uv run --locked python -m unittest discover -s tests -q
       - run: uv run --locked ruff check .
       - run: uv run --locked ruff format --check .
       - run: uv run --locked mypy character_runtime
+      - run: uv run --locked python -m scripts.check_plugin
+      - run: uv run --locked python -m scripts.schemas --check
+      - run: uv run --locked python -m scripts.check_migration
+      - run: uv run --locked python -m scripts.check_runtime
       - run: uv build --build-constraints build-constraints.txt
       - run: uv run --locked python -m scripts.check_installation

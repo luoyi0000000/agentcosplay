@@ -1,0 +1,968 @@
+{
+  "$defs": {
+    "AffectEffect": {
+      "additionalProperties": false,
+      "properties": {
+        "valence": {
+          "default": 0,
+          "maximum": 0.25,
+          "minimum": -0.25,
+          "title": "Valence",
+          "type": "number"
+        },
+        "arousal": {
+          "default": 0,
+          "maximum": 0.25,
+          "minimum": -0.25,
+          "title": "Arousal",
+          "type": "number"
+        },
+        "vulnerability": {
+          "default": 0,
+          "maximum": 0.25,
+          "minimum": -0.25,
+          "title": "Vulnerability",
+          "type": "number"
+        },
+        "confidence": {
+          "default": 0,
+          "maximum": 0.25,
+          "minimum": -0.25,
+          "title": "Confidence",
+          "type": "number"
+        },
+        "tags": {
+          "items": {
+            "maxLength": 4000,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 5,
+          "title": "Tags",
+          "type": "array"
+        },
+        "evidence_refs": {
+          "items": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 10,
+          "minItems": 1,
+          "title": "Evidence Refs",
+          "type": "array"
+        }
+      },
+      "required": [
+        "evidence_refs"
+      ],
+      "title": "AffectEffect",
+      "type": "object"
+    },
+    "CompanionUpdate": {
+      "additionalProperties": false,
+      "properties": {
+        "settings": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SettingsUpdate"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "mood": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/MoodUpdate"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "goal": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/GoalUpdate"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "habit": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/HabitUpdate"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "topic": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TopicUpdate"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "title": "CompanionUpdate",
+      "type": "object"
+    },
+    "FactProposal": {
+      "additionalProperties": false,
+      "properties": {
+        "semantic_key": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Semantic Key",
+          "type": "string"
+        },
+        "subject": {
+          "default": "character",
+          "enum": [
+            "owner",
+            "character",
+            "project"
+          ],
+          "title": "Subject",
+          "type": "string"
+        },
+        "value": {
+          "maxLength": 4000,
+          "minLength": 1,
+          "title": "Value",
+          "type": "string"
+        },
+        "confidence": {
+          "default": 0.8,
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Confidence",
+          "type": "number"
+        },
+        "evidence_refs": {
+          "items": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 20,
+          "minItems": 1,
+          "title": "Evidence Refs",
+          "type": "array"
+        },
+        "operation": {
+          "default": "CREATE",
+          "enum": [
+            "CREATE",
+            "SUPERSEDE"
+          ],
+          "title": "Operation",
+          "type": "string"
+        },
+        "target_id": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Target Id"
+        },
+        "allowlist_id": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Allowlist Id"
+        },
+        "explicit_confirmation": {
+          "default": "",
+          "maxLength": 1000,
+          "title": "Explicit Confirmation",
+          "type": "string"
+        }
+      },
+      "required": [
+        "semantic_key",
+        "value",
+        "evidence_refs"
+      ],
+      "title": "FactProposal",
+      "type": "object"
+    },
+    "GoalUpdate": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Id",
+          "type": "string"
+        },
+        "description": {
+          "maxLength": 500,
+          "minLength": 1,
+          "title": "Description",
+          "type": "string"
+        },
+        "source": {
+          "default": "user_explicit",
+          "enum": [
+            "user_explicit",
+            "definition",
+            "schedule",
+            "growth"
+          ],
+          "title": "Source",
+          "type": "string"
+        },
+        "importance": {
+          "default": 0.5,
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Importance",
+          "type": "number"
+        },
+        "status": {
+          "default": "active",
+          "enum": [
+            "active",
+            "paused",
+            "completed",
+            "cancelled"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "deadline": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Deadline"
+        },
+        "progress": {
+          "default": 0,
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Progress",
+          "type": "number"
+        },
+        "evidence_ids": {
+          "items": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 5,
+          "title": "Evidence Ids",
+          "type": "array"
+        },
+        "activity": {
+          "default": "reading",
+          "enum": [
+            "idle",
+            "reading",
+            "resting",
+            "working",
+            "walking",
+            "eating"
+          ],
+          "title": "Activity",
+          "type": "string"
+        },
+        "simulate": {
+          "default": false,
+          "title": "Simulate",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "id",
+        "description"
+      ],
+      "title": "GoalUpdate",
+      "type": "object"
+    },
+    "GrowthChange": {
+      "additionalProperties": false,
+      "properties": {
+        "domain": {
+          "enum": [
+            "personality",
+            "world",
+            "voice"
+          ],
+          "title": "Domain",
+          "type": "string"
+        },
+        "key": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Key",
+          "type": "string"
+        },
+        "value": {
+          "maxLength": 4000,
+          "minLength": 1,
+          "title": "Value",
+          "type": "string"
+        }
+      },
+      "required": [
+        "domain",
+        "key",
+        "value"
+      ],
+      "title": "GrowthChange",
+      "type": "object"
+    },
+    "GrowthDraft": {
+      "additionalProperties": false,
+      "properties": {
+        "changes": {
+          "items": {
+            "$ref": "#/$defs/GrowthChange"
+          },
+          "maxItems": 5,
+          "minItems": 1,
+          "title": "Changes",
+          "type": "array"
+        },
+        "evidence_refs": {
+          "items": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 20,
+          "minItems": 3,
+          "title": "Evidence Refs",
+          "type": "array"
+        },
+        "reason": {
+          "maxLength": 4000,
+          "minLength": 1,
+          "title": "Reason",
+          "type": "string"
+        }
+      },
+      "required": [
+        "changes",
+        "evidence_refs",
+        "reason"
+      ],
+      "title": "GrowthDraft",
+      "type": "object"
+    },
+    "HabitUpdate": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Id",
+          "type": "string"
+        },
+        "description": {
+          "maxLength": 500,
+          "minLength": 1,
+          "title": "Description",
+          "type": "string"
+        },
+        "activity": {
+          "default": "reading",
+          "enum": [
+            "idle",
+            "reading",
+            "resting",
+            "working",
+            "walking",
+            "eating"
+          ],
+          "title": "Activity",
+          "type": "string"
+        },
+        "evidence_ids": {
+          "items": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 5,
+          "title": "Evidence Ids",
+          "type": "array"
+        }
+      },
+      "required": [
+        "id",
+        "description"
+      ],
+      "title": "HabitUpdate",
+      "type": "object"
+    },
+    "MemoryProposal": {
+      "additionalProperties": false,
+      "properties": {
+        "content": {
+          "maxLength": 4000,
+          "minLength": 1,
+          "title": "Content",
+          "type": "string"
+        },
+        "kind": {
+          "default": "character_long_term",
+          "enum": [
+            "session",
+            "short_term",
+            "character_long_term",
+            "relationship",
+            "real_user"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "importance": {
+          "default": 0.5,
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Importance",
+          "type": "number"
+        },
+        "confidence": {
+          "default": 0.8,
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Confidence",
+          "type": "number"
+        },
+        "source": {
+          "default": "conversation",
+          "maxLength": 2000,
+          "title": "Source",
+          "type": "string"
+        },
+        "ttl_seconds": {
+          "anyOf": [
+            {
+              "maximum": 31536000,
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Ttl Seconds"
+        },
+        "semantic_key": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Semantic Key"
+        },
+        "explicit_remember": {
+          "default": false,
+          "title": "Explicit Remember",
+          "type": "boolean"
+        },
+        "evidence_refs": {
+          "items": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 20,
+          "minItems": 1,
+          "title": "Evidence Refs",
+          "type": "array"
+        },
+        "domain": {
+          "default": "character",
+          "enum": [
+            "character",
+            "project"
+          ],
+          "title": "Domain",
+          "type": "string"
+        },
+        "sensitive_confirmation": {
+          "default": "",
+          "maxLength": 1000,
+          "title": "Sensitive Confirmation",
+          "type": "string"
+        }
+      },
+      "required": [
+        "content",
+        "evidence_refs"
+      ],
+      "title": "MemoryProposal",
+      "type": "object"
+    },
+    "MoodUpdate": {
+      "additionalProperties": false,
+      "properties": {
+        "label": {
+          "maxLength": 80,
+          "minLength": 1,
+          "title": "Label",
+          "type": "string"
+        },
+        "intensity": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Intensity",
+          "type": "number"
+        },
+        "reason": {
+          "maxLength": 500,
+          "minLength": 1,
+          "title": "Reason",
+          "type": "string"
+        },
+        "evidence_ids": {
+          "items": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 5,
+          "title": "Evidence Ids",
+          "type": "array"
+        }
+      },
+      "required": [
+        "label",
+        "intensity",
+        "reason"
+      ],
+      "title": "MoodUpdate",
+      "type": "object"
+    },
+    "NarrativeProposal": {
+      "additionalProperties": false,
+      "properties": {
+        "content": {
+          "maxLength": 4000,
+          "minLength": 1,
+          "title": "Content",
+          "type": "string"
+        },
+        "evidence_refs": {
+          "items": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 20,
+          "minItems": 1,
+          "title": "Evidence Refs",
+          "type": "array"
+        }
+      },
+      "required": [
+        "content",
+        "evidence_refs"
+      ],
+      "title": "NarrativeProposal",
+      "type": "object"
+    },
+    "RelationshipEffect": {
+      "additionalProperties": false,
+      "properties": {
+        "dimension": {
+          "enum": [
+            "trust",
+            "familiarity",
+            "closeness",
+            "friction"
+          ],
+          "title": "Dimension",
+          "type": "string"
+        },
+        "direction": {
+          "enum": [
+            "increase",
+            "decrease"
+          ],
+          "title": "Direction",
+          "type": "string"
+        },
+        "evidence_refs": {
+          "items": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 20,
+          "minItems": 3,
+          "title": "Evidence Refs",
+          "type": "array"
+        }
+      },
+      "required": [
+        "dimension",
+        "direction",
+        "evidence_refs"
+      ],
+      "title": "RelationshipEffect",
+      "type": "object"
+    },
+    "SettingsUpdate": {
+      "additionalProperties": false,
+      "properties": {
+        "proactive_contact": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Proactive Contact"
+        },
+        "schedule_awareness": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Schedule Awareness"
+        },
+        "weather_awareness": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Weather Awareness"
+        },
+        "life_simulation": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Life Simulation"
+        },
+        "relationship_growth": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Relationship Growth"
+        },
+        "timezone": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Timezone"
+        },
+        "quiet_start": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Quiet Start"
+        },
+        "quiet_end": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Quiet End"
+        },
+        "cooldown_seconds": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Cooldown Seconds"
+        },
+        "recent_activity_seconds": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Recent Activity Seconds"
+        },
+        "max_contacts_per_day": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Max Contacts Per Day"
+        },
+        "availability": {
+          "anyOf": [
+            {
+              "enum": [
+                "unknown",
+                "available",
+                "busy",
+                "unavailable"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Availability"
+        }
+      },
+      "title": "SettingsUpdate",
+      "type": "object"
+    },
+    "TopicUpdate": {
+      "additionalProperties": false,
+      "properties": {
+        "evidence_ids": {
+          "items": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 10,
+          "title": "Evidence Ids",
+          "type": "array"
+        },
+        "id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Id",
+          "type": "string"
+        },
+        "description": {
+          "maxLength": 500,
+          "minLength": 1,
+          "title": "Description",
+          "type": "string"
+        },
+        "relevance": {
+          "default": 0.5,
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Relevance",
+          "type": "number"
+        },
+        "priority": {
+          "default": 0.5,
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Priority",
+          "type": "number"
+        },
+        "cooldown_seconds": {
+          "default": 604800,
+          "maximum": 31536000,
+          "minimum": 86400,
+          "title": "Cooldown Seconds",
+          "type": "integer"
+        },
+        "status": {
+          "default": "open",
+          "enum": [
+            "open",
+            "resolved",
+            "dismissed"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "mentioned": {
+          "default": false,
+          "title": "Mentioned",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "id",
+        "description"
+      ],
+      "title": "TopicUpdate",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "affect_effects": {
+      "items": {
+        "$ref": "#/$defs/AffectEffect"
+      },
+      "maxItems": 1,
+      "title": "Affect Effects",
+      "type": "array"
+    },
+    "companion_update": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/CompanionUpdate"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "companion_allowlist_id": {
+      "anyOf": [
+        {
+          "maxLength": 200,
+          "minLength": 1,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Companion Allowlist Id"
+    },
+    "operation_id": {
+      "maxLength": 200,
+      "minLength": 1,
+      "title": "Operation Id",
+      "type": "string"
+    },
+    "relationship_effects": {
+      "items": {
+        "$ref": "#/$defs/RelationshipEffect"
+      },
+      "maxItems": 3,
+      "title": "Relationship Effects",
+      "type": "array"
+    },
+    "growth_proposals": {
+      "items": {
+        "$ref": "#/$defs/GrowthDraft"
+      },
+      "maxItems": 3,
+      "title": "Growth Proposals",
+      "type": "array"
+    },
+    "memory_proposals": {
+      "items": {
+        "$ref": "#/$defs/MemoryProposal"
+      },
+      "maxItems": 20,
+      "title": "Memory Proposals",
+      "type": "array"
+    },
+    "fact_proposals": {
+      "items": {
+        "$ref": "#/$defs/FactProposal"
+      },
+      "maxItems": 20,
+      "title": "Fact Proposals",
+      "type": "array"
+    },
+    "narrative_proposals": {
+      "items": {
+        "$ref": "#/$defs/NarrativeProposal"
+      },
+      "maxItems": 5,
+      "title": "Narrative Proposals",
+      "type": "array"
+    }
+  },
+  "required": [
+    "operation_id"
+  ],
+  "title": "TurnProposal",
+  "type": "object",
+  "$schema": "https://json-schema.org/draft/2020-12/schema"
+}

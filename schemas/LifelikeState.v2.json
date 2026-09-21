@@ -1,0 +1,138 @@
+{
+  "$defs": {
+    "AffectState": {
+      "additionalProperties": false,
+      "properties": {
+        "valence": {
+          "default": 0,
+          "maximum": 1,
+          "minimum": -1,
+          "title": "Valence",
+          "type": "number"
+        },
+        "arousal": {
+          "default": 0.3,
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Arousal",
+          "type": "number"
+        },
+        "vulnerability": {
+          "default": 0.2,
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Vulnerability",
+          "type": "number"
+        },
+        "confidence": {
+          "default": 0.5,
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Confidence",
+          "type": "number"
+        },
+        "tags": {
+          "items": {
+            "maxLength": 4000,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 5,
+          "title": "Tags",
+          "type": "array"
+        },
+        "updated_at": {
+          "format": "date-time",
+          "title": "Updated At",
+          "type": "string"
+        },
+        "influenced_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Influenced At"
+        },
+        "evidence_refs": {
+          "items": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 100,
+          "title": "Evidence Refs",
+          "type": "array"
+        }
+      },
+      "title": "AffectState",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "character_id": {
+      "maxLength": 200,
+      "minLength": 1,
+      "title": "Character Id",
+      "type": "string"
+    },
+    "affect": {
+      "$ref": "#/$defs/AffectState"
+    },
+    "fatigue": {
+      "default": 0,
+      "maximum": 1,
+      "minimum": 0,
+      "title": "Fatigue",
+      "type": "number"
+    },
+    "hunger": {
+      "default": 0,
+      "maximum": 1,
+      "minimum": 0,
+      "title": "Hunger",
+      "type": "number"
+    },
+    "discomfort": {
+      "default": 0,
+      "maximum": 1,
+      "minimum": 0,
+      "title": "Discomfort",
+      "type": "number"
+    },
+    "social_capacity": {
+      "default": 1,
+      "maximum": 1,
+      "minimum": 0,
+      "title": "Social Capacity",
+      "type": "number"
+    },
+    "custom_axes": {
+      "additionalProperties": {
+        "maximum": 1,
+        "minimum": 0,
+        "type": "number"
+      },
+      "maxProperties": 10,
+      "title": "Custom Axes",
+      "type": "object"
+    },
+    "updated_at": {
+      "format": "date-time",
+      "title": "Updated At",
+      "type": "string"
+    }
+  },
+  "required": [
+    "character_id"
+  ],
+  "title": "LifelikeState",
+  "type": "object",
+  "$schema": "https://json-schema.org/draft/2020-12/schema"
+}

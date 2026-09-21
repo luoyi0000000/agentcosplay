@@ -1,0 +1,103 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "maxLength": 200,
+      "minLength": 1,
+      "title": "Id",
+      "type": "string"
+    },
+    "character_id": {
+      "maxLength": 200,
+      "minLength": 1,
+      "title": "Character Id",
+      "type": "string"
+    },
+    "source_ref": {
+      "maxLength": 1000,
+      "minLength": 1,
+      "title": "Source Ref",
+      "type": "string"
+    },
+    "view_tags": {
+      "items": {
+        "maxLength": 4000,
+        "minLength": 1,
+        "type": "string"
+      },
+      "maxItems": 8,
+      "title": "View Tags",
+      "type": "array"
+    },
+    "style_tags": {
+      "items": {
+        "maxLength": 4000,
+        "minLength": 1,
+        "type": "string"
+      },
+      "maxItems": 8,
+      "title": "Style Tags",
+      "type": "array"
+    },
+    "canonical_traits": {
+      "items": {
+        "maxLength": 4000,
+        "minLength": 1,
+        "type": "string"
+      },
+      "maxItems": 20,
+      "title": "Canonical Traits",
+      "type": "array"
+    },
+    "confidence": {
+      "default": 0.5,
+      "maximum": 1,
+      "minimum": 0,
+      "title": "Confidence",
+      "type": "number"
+    },
+    "evidence_refs": {
+      "items": {
+        "maxLength": 200,
+        "minLength": 1,
+        "type": "string"
+      },
+      "maxItems": 10,
+      "minItems": 1,
+      "title": "Evidence Refs",
+      "type": "array"
+    },
+    "authority": {
+      "default": "HOST_OBSERVED",
+      "enum": [
+        "USER_EXPLICIT",
+        "HOST_OBSERVED"
+      ],
+      "title": "Authority",
+      "type": "string"
+    },
+    "status": {
+      "default": "candidate",
+      "enum": [
+        "candidate",
+        "trusted",
+        "rejected"
+      ],
+      "title": "Status",
+      "type": "string"
+    },
+    "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+    }
+  },
+  "required": [
+    "character_id",
+    "source_ref",
+    "evidence_refs"
+  ],
+  "title": "VisualPrototype",
+  "type": "object",
+  "$schema": "https://json-schema.org/draft/2020-12/schema"
+}

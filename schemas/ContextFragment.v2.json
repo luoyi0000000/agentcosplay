@@ -1,0 +1,88 @@
+{
+  "$defs": {
+    "JsonValue": {}
+  },
+  "additionalProperties": false,
+  "properties": {
+    "domain": {
+      "enum": [
+        "stable_character",
+        "relationship",
+        "state",
+        "memory",
+        "goals",
+        "open_loops",
+        "life",
+        "perception",
+        "external_context"
+      ],
+      "title": "Domain",
+      "type": "string"
+    },
+    "authority": {
+      "enum": [
+        "USER_EXPLICIT",
+        "USER_MANUAL",
+        "ADMIN_CONFIG",
+        "TOOL_VERIFIED",
+        "HOST_OBSERVED",
+        "MODEL_DERIVED",
+        "INFERRED",
+        "SIMULATED"
+      ],
+      "title": "Authority",
+      "type": "string"
+    },
+    "stability": {
+      "enum": [
+        "STATIC",
+        "SEMI_STABLE",
+        "DYNAMIC",
+        "EPHEMERAL"
+      ],
+      "title": "Stability",
+      "type": "string"
+    },
+    "priority": {
+      "default": 50,
+      "maximum": 100,
+      "minimum": 0,
+      "title": "Priority",
+      "type": "integer"
+    },
+    "payload": {
+      "$ref": "#/$defs/JsonValue"
+    },
+    "budget_cost": {
+      "default": 0,
+      "minimum": 0,
+      "title": "Budget Cost",
+      "type": "integer"
+    },
+    "sensitivity": {
+      "default": "private",
+      "enum": [
+        "public",
+        "private"
+      ],
+      "title": "Sensitivity",
+      "type": "string"
+    },
+    "source_version": {
+      "maxLength": 200,
+      "minLength": 1,
+      "title": "Source Version",
+      "type": "string"
+    }
+  },
+  "required": [
+    "domain",
+    "authority",
+    "stability",
+    "payload",
+    "source_version"
+  ],
+  "title": "ContextFragment",
+  "type": "object",
+  "$schema": "https://json-schema.org/draft/2020-12/schema"
+}

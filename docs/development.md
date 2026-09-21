@@ -1,29 +1,32 @@
-# 本地开发与验收
+# 本地开发与维护
 
-Python 3.11+，使用项目锁文件；不更改真实宿主配置，不自动发布。
+Python 3.11+，使用锁文件；维护检查在隔离临时目录运行，不修改真实宿主配置。
 
 ```bash
 uv sync --locked
-uv run --locked python -m unittest discover -s tests -q
 uv run --locked ruff check .
 uv run --locked ruff format --check .
 uv run --locked mypy character_runtime
+uv run --locked python -m scripts.check_plugin
+uv run --locked python -m scripts.schemas --check
+uv run --locked python -m scripts.check_migration
+uv run --locked python -m scripts.check_runtime
 uv build --build-constraints build-constraints.txt
 uv run --locked python -m scripts.check_installation
 ```
 
-最后一项下载依赖并在中文、空格路径的临时目录安装。覆盖 install/doctor、真实 stdio 进程重连、源码移动、同一 HTTP 进程两个客户端双向读写、update/rollback/uninstall/reinstall。临时角色和配置自动删除；这不是 Hermes/AstrBot 应用实际聊天验收。
+安装 smoke 使用真实子进程和 MCP 协议：依赖/启动、数据库、工具发现、合成人物与会话、提交、重连、召回、源码移动、配置合并、更新、回滚、卸载及重装保留数据。临时人物和配置随临时目录一起清理。
 
-单测包含新旧角色契约、隔离、真实记忆确认、遗忘派生数据、Companion、Provider 过期、离线模拟、幂等回合、调度保留/回执/中断、安装文件占用与恢复。Skill 首用还需要代理场景复核，不能用静态字符串测试冒充实际 UI。
-
-.github/workflows/verify.yml 为 macOS/Windows/Linux 配置同样命令；未上传时该工作流未执行。Windows 依赖用户 ACL，POSIX 权限/符号链接测试只在适用系统执行；跨平台路径与文件占用恢复测试在所有平台运行。
+`.github/workflows/verify.yml` 在三个 runner 上执行同一组命令。锁文件必须能被 TOML 解析并满足 `--locked`，不能通过删文件、解除锁定或忽略失败绕过问题。
 
 ## 契约与分发
 
-`python -m scripts.schemas` 生成公开契约。旧 Definition/State/Memory/Package V1 不变；新增 CompanionState/Observation V1、可选 Companion Package V2。Schema 漂移由测试检测。
+`python -m scripts.schemas` 更新公开 Schema；`--check` 检查它们与当前模型一致且不写文件。插件维护检查核对两份 manifest、唯一 Skill、引用路径、版本、原始 Logo 摘要和 PNG 完整性。
 
-正式安装器只有 install.py；Marketplace 直接消费 plugins/agentcosplay，不再维护单独 Skill ZIP 或 Bash 下载器。wheel 包含 Runtime，源码分发包含完整 Plugin/安装器/契约；普通用户从仓库安装。旧 character-runtime CLI 别名保留，避免破坏已有启动配置。
+完整安装入口为 `install.py`；Marketplace 消费 `plugins/agentcosplay`。wheel 包含 Runtime；源码分发包含完整 Plugin、安装器、契约和标准 MIT LICENSE。保留 `character-runtime` CLI 别名供已有启动配置使用。
 
-.venv 用于开发复现；dist、构建缓存、临时数据库不入 Git。清理只针对本次生成且可再生的路径，不能使用 git clean -fdx 删除未知用户文件。
+`.venv` 用于开发复现；dist、缓存、临时数据库不入 Git。只清理本次生成且可再生的文件，不删除未知用户数据。
 
-版本变更同步 pyproject.toml、__init__.py、两个 plugin manifest 和 uv.lock。作者未选择 LICENSE，本轮不代选。
+版本变更同步 `pyproject.toml`、`__init__.py`、两份 plugin manifest 和 `uv.lock`。
+
+上传仅在用户明确批准后执行。API 传输必须逐个比较远端 blob SHA 与本地 Git 对象 SHA，再比较完整 tree；只有分支指针更新成功不足以证明内容完整。大文件不得经过可能截断的终端展示输出。读取远端后再次验证锁文件和品牌图片。

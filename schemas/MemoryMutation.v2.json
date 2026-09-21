@@ -1,0 +1,79 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "operation_id": {
+      "maxLength": 200,
+      "minLength": 1,
+      "title": "Operation Id",
+      "type": "string"
+    },
+    "action": {
+      "enum": [
+        "MODIFY",
+        "FORGET",
+        "ARCHIVE",
+        "PROMOTE"
+      ],
+      "title": "Action",
+      "type": "string"
+    },
+    "session_id": {
+      "maxLength": 200,
+      "minLength": 1,
+      "title": "Session Id",
+      "type": "string"
+    },
+    "memory_id": {
+      "maxLength": 200,
+      "minLength": 1,
+      "title": "Memory Id",
+      "type": "string"
+    },
+    "allowlist_id": {
+      "maxLength": 200,
+      "minLength": 1,
+      "title": "Allowlist Id",
+      "type": "string"
+    },
+    "content": {
+      "anyOf": [
+        {
+          "maxLength": 4000,
+          "minLength": 1,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Content"
+    },
+    "evidence_refs": {
+      "items": {
+        "maxLength": 200,
+        "minLength": 1,
+        "type": "string"
+      },
+      "maxItems": 20,
+      "title": "Evidence Refs",
+      "type": "array"
+    },
+    "confirmation": {
+      "default": "",
+      "maxLength": 1000,
+      "title": "Confirmation",
+      "type": "string"
+    }
+  },
+  "required": [
+    "operation_id",
+    "action",
+    "session_id",
+    "memory_id",
+    "allowlist_id"
+  ],
+  "title": "MemoryMutation",
+  "type": "object",
+  "$schema": "https://json-schema.org/draft/2020-12/schema"
+}

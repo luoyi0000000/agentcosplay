@@ -1,7 +1,8 @@
 """Transactional companion state, conservative offline simulation, and bounded views."""
 
 from collections.abc import Callable, Iterable
-from datetime import datetime
+from datetime import datetime, timedelta
+from hashlib import sha256
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -17,8 +18,9 @@ from .companion_models import (
     Settings,
     Topic,
 )
-from .models import Candidate, Memory, now
+from .models import Candidate, now
 from .providers import Observation, Provider
+from .safety import check_content
 from .storage import Storage
 
 
@@ -57,21 +59,25 @@ class Companion:
             self.owner, "companion", state.character_id, validated.model_dump(mode="json")
         )
 
+    @staticmethod
+    def _invalidate_pending(state: CompanionState, reason: str) -> None:
+        pending = state.pending_decision
+        if pending and pending.status in ("reserved", "generation_requested"):
+            pending.should_contact = False
+            pending.silence_reason = reason
+
     def _evidence(self, character_id: str, evidence_ids: list[str]) -> None:
         for key in evidence_ids:
-            record = self.storage.get(self.owner, "memory", key)
+            record = self.storage.get(self.owner, "raw_event", key)
             if (
                 not record
                 or record.get("character_id") != character_id
-                or record.get("status") != "active"
-                or record.get("kind") in ("session", "short_term", "real_user")
+                or record.get("owner_id") != self.owner
+                or record.get("legacy_unverified")
+                or record.get("validity") != "active"
+                or record.get("source_kind") != "USER_DIRECT"
             ):
-                raise ValueError("Companion evidence must be an active owned character memory")
-            memory = Memory.model_validate(record)
-            if memory.owner != self.owner or (
-                memory.expires_at and memory.expires_at <= self.clock()
-            ):
-                raise ValueError("Companion evidence is expired or belongs to another owner")
+                raise ValueError("Companion evidence requires direct owned RawEvents")
 
     def update(self, character_id: str, update: CompanionUpdate) -> CompanionState:
         update = CompanionUpdate.model_validate(update.model_dump())
@@ -82,6 +88,8 @@ class Companion:
                 settings = state.settings.model_dump()
                 settings.update(update.settings.model_dump(exclude_none=True))
                 state.settings = Settings.model_validate(settings)
+                if not state.settings.proactive_contact:
+                    self._invalidate_pending(state, "disabled")
                 if not state.settings.life_simulation:
                     state.life = LifeState(updated_at=instant)
                 # Turning simulation on starts here; disabled time must never be caught up.
@@ -120,6 +128,17 @@ class Companion:
                 if goal.status == "completed":
                     goal.progress = 1
                 state.goals = [g for g in state.goals if g.id != goal.id] + [goal]
+                pending = state.pending_decision
+                if (
+                    pending
+                    and pending.topic_id == "goal:" + goal.id
+                    and (
+                        goal.status != "active"
+                        or sha256(goal.description.encode()).hexdigest()
+                        != pending.topic_fingerprint
+                    )
+                ):
+                    self._invalidate_pending(state, "topic_no_longer_relevant")
             if update.habit:
                 change = update.habit
                 self._evidence(character_id, change.evidence_ids)
@@ -141,6 +160,7 @@ class Companion:
                 ]
                 habit.last_observed_at = instant
             if update.topic:
+                self._evidence(character_id, update.topic.evidence_ids)
                 old_topic = next((t for t in state.topics if t.id == update.topic.id), None)
                 if old_topic is None and len(state.topics) >= 30:
                     raise ValueError("Topic limit reached; reuse a resolved topic ID")
@@ -152,11 +172,24 @@ class Companion:
                 )
                 topic = Topic.model_validate(data)
                 state.topics = [t for t in state.topics if t.id != topic.id] + [topic]
+                pending = state.pending_decision
+                if (
+                    pending
+                    and pending.topic_id == "topic:" + topic.id
+                    and (
+                        topic.status != "open"
+                        or sha256(topic.description.encode()).hexdigest()
+                        != pending.topic_fingerprint
+                        or update.topic.mentioned
+                    )
+                ):
+                    self._invalidate_pending(state, "topic_no_longer_relevant")
             self._save(state)
             return state
 
     def observe(self, character_id: str, observation: Observation) -> None:
         observation = Observation.model_validate(observation.model_dump())
+        check_content(observation.model_dump_json())
         with self.storage.transaction():
             state = self.get(character_id)
             if not observation.fresh(self.clock()):
@@ -194,7 +227,7 @@ class Companion:
             if kind == "schedule" and not state.settings.schedule_awareness:
                 continue
             value = observation.model_dump(mode="json")
-            value["summary"] = observation.summary[:240]
+            value["summary"] = observation.summary
             result[kind] = value
         return result
 
@@ -221,17 +254,30 @@ class Companion:
                     "resting"
                     if hour < 7 or hour >= 23
                     else (
-                        schedule.get("activity")
+                        "eating"
+                        if hour in (8, 12, 19)
+                        else schedule.get("activity")
                         or (goal.activity if goal else (habit.activity if habit else "reading"))
                     )
                 )
                 if activity == "walking" and weather.get("condition") in ("rain", "snow", "storm"):
                     activity = "reading"
-                state.life = LifeState(
-                    activity=activity,
-                    updated_at=instant,
-                    reason="受约束的日常模拟；不代表现实或共同经历",
-                )
+                if (
+                    state.life.next_decision_after is None
+                    or state.life.next_decision_after <= instant
+                    or state.life.activity != activity
+                ):
+                    state.life = LifeState(
+                        activity=activity,
+                        updated_at=instant,
+                        current_phase=activity,
+                        started_at=state.life.started_at
+                        if state.life.activity == activity
+                        else instant,
+                        expected_end=instant + timedelta(hours=1),
+                        next_decision_after=instant + timedelta(minutes=30),
+                        reason="受约束的日常模拟；不代表现实或共同经历",
+                    )
                 if goal and seconds > 0:
                     # ponytail: bounded coarse offline progress, not an hour-by-hour simulator.
                     hours = min(seconds / 3600, 72)
@@ -276,7 +322,7 @@ class Companion:
 
         def select(items: Iterable[Goal | Topic | Habit]) -> list[dict[str, Any]]:
             result = []
-            for item in sorted(items, key=relevance, reverse=True)[:3]:
+            for item in sorted(items, key=relevance, reverse=True):
                 if words and not relevance(item)[0] and relevance(item)[1] < 0.8:
                     continue
                 fields = {
@@ -291,12 +337,10 @@ class Companion:
                     "established",
                 }
                 data = item.model_dump(mode="json", include=fields)
-                data["description"] = item.description[:240]
                 result.append(data)
             return result
 
         mood = state.mood.model_dump(mode="json", exclude={"evidence_ids"})
-        mood["reason"] = state.mood.reason[:240]
         return {
             "mood": mood,
             "goals": select(g for g in state.goals if g.status == "active"),
@@ -312,6 +356,7 @@ class Companion:
             state = self.get(character_id)
             instant = self.clock()
             state.last_user_activity = max(instant, state.last_user_activity or instant)
+            self._invalidate_pending(state, "recent_activity")
             self._save(state)
 
     def decide(self, character_id: str, reservation_id: str | None = None) -> Decision:
@@ -319,7 +364,23 @@ class Companion:
 
         return decide(self, character_id, reservation_id)
 
-    def ack(self, character_id: str, decision_id: str, delivered: bool) -> dict[str, Any]:
+    def prepare(self, character_id: str, decision_id: str) -> Decision:
+        from .proactive import prepare
+
+        return prepare(self, character_id, decision_id)
+
+    def delivery(self, character_id: str, decision_id: str, claim_id: str) -> Decision:
+        from .proactive import delivery
+
+        return delivery(self, character_id, decision_id, claim_id)
+
+    def ack(
+        self,
+        character_id: str,
+        decision_id: str,
+        delivered: bool | None,
+        claim_id: str | None = None,
+    ) -> dict[str, Any]:
         from .proactive import ack
 
-        return ack(self, character_id, decision_id, delivered)
+        return ack(self, character_id, decision_id, delivered, claim_id)

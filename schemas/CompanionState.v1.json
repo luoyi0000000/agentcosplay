@@ -16,7 +16,6 @@
             "short_term",
             "character_long_term",
             "relationship",
-            "shared_roleplay",
             "real_user"
           ],
           "title": "Kind",
@@ -77,6 +76,39 @@
           "title": "Should Contact",
           "type": "boolean"
         },
+        "status": {
+          "default": "unknown",
+          "enum": [
+            "reserved",
+            "generation_requested",
+            "delivery_pending",
+            "delivered",
+            "failed",
+            "unknown"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "claim_id": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Claim Id"
+        },
+        "topic_fingerprint": {
+          "default": "",
+          "maxLength": 64,
+          "title": "Topic Fingerprint",
+          "type": "string"
+        },
         "reason": {
           "default": "",
           "maxLength": 240,
@@ -85,7 +117,7 @@
         },
         "topic": {
           "default": "",
-          "maxLength": 240,
+          "maxLength": 500,
           "title": "Topic",
           "type": "string"
         },
@@ -221,7 +253,8 @@
             "reading",
             "resting",
             "working",
-            "walking"
+            "walking",
+            "eating"
           ],
           "title": "Activity",
           "type": "string"
@@ -274,7 +307,8 @@
             "reading",
             "resting",
             "working",
-            "walking"
+            "walking",
+            "eating"
           ],
           "title": "Activity",
           "type": "string"
@@ -349,10 +383,61 @@
             "reading",
             "resting",
             "working",
-            "walking"
+            "walking",
+            "eating"
           ],
           "title": "Activity",
           "type": "string"
+        },
+        "current_process": {
+          "default": "daily_routine",
+          "maxLength": 100,
+          "title": "Current Process",
+          "type": "string"
+        },
+        "current_phase": {
+          "default": "idle",
+          "maxLength": 100,
+          "title": "Current Phase",
+          "type": "string"
+        },
+        "started_at": {
+          "format": "date-time",
+          "title": "Started At",
+          "type": "string"
+        },
+        "expected_end": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Expected End"
+        },
+        "next_decision_after": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Next Decision After"
+        },
+        "confidence": {
+          "default": 0.5,
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Confidence",
+          "type": "number"
         },
         "source": {
           "const": "simulated_life",
@@ -438,6 +523,13 @@
           "title": "Schema Version",
           "type": "integer"
         },
+        "confidence": {
+          "default": 1,
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Confidence",
+          "type": "number"
+        },
         "kind": {
           "enum": [
             "time",
@@ -500,7 +592,8 @@
                 "reading",
                 "resting",
                 "working",
-                "walking"
+                "walking",
+                "eating"
               ],
               "type": "string"
             },
@@ -621,6 +714,16 @@
     "Topic": {
       "additionalProperties": false,
       "properties": {
+        "evidence_ids": {
+          "items": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 10,
+          "title": "Evidence Ids",
+          "type": "array"
+        },
         "id": {
           "maxLength": 200,
           "minLength": 1,

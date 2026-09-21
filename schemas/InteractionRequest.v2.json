@@ -1,0 +1,61 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "preferred": {
+      "default": "TEXT",
+      "enum": [
+        "TEXT",
+        "REPLY",
+        "REACTION",
+        "STICKER",
+        "IMAGE_OR_MEME",
+        "POKE_OR_LIGHT_PING",
+        "TYPING",
+        "READ_RECEIPT",
+        "SILENCE"
+      ],
+      "title": "Preferred",
+      "type": "string"
+    },
+    "purpose": {
+      "default": "ACKNOWLEDGE",
+      "enum": [
+        "AFFECTION",
+        "TEASE",
+        "ACKNOWLEDGE",
+        "COMFORT",
+        "CELEBRATE",
+        "CURIOSITY",
+        "SURPRISE",
+        "REMINDER"
+      ],
+      "title": "Purpose",
+      "type": "string"
+    },
+    "capabilities": {
+      "default": [
+        "TEXT"
+      ],
+      "items": {
+        "enum": [
+          "TEXT",
+          "REPLY",
+          "REACTION",
+          "STICKER",
+          "IMAGE_OR_MEME",
+          "POKE_OR_LIGHT_PING",
+          "TYPING",
+          "READ_RECEIPT",
+          "SILENCE"
+        ],
+        "type": "string"
+      },
+      "maxItems": 9,
+      "title": "Capabilities",
+      "type": "array"
+    }
+  },
+  "title": "InteractionRequest",
+  "type": "object",
+  "$schema": "https://json-schema.org/draft/2020-12/schema"
+}

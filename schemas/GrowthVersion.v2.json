@@ -1,0 +1,129 @@
+{
+  "$defs": {
+    "GrowthChange": {
+      "additionalProperties": false,
+      "properties": {
+        "domain": {
+          "enum": [
+            "personality",
+            "world",
+            "voice"
+          ],
+          "title": "Domain",
+          "type": "string"
+        },
+        "key": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Key",
+          "type": "string"
+        },
+        "value": {
+          "maxLength": 4000,
+          "minLength": 1,
+          "title": "Value",
+          "type": "string"
+        }
+      },
+      "required": [
+        "domain",
+        "key",
+        "value"
+      ],
+      "title": "GrowthChange",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "maxLength": 200,
+      "minLength": 1,
+      "title": "Id",
+      "type": "string"
+    },
+    "character_id": {
+      "maxLength": 200,
+      "minLength": 1,
+      "title": "Character Id",
+      "type": "string"
+    },
+    "previous_version": {
+      "anyOf": [
+        {
+          "maxLength": 200,
+          "minLength": 1,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Previous Version"
+    },
+    "overlay": {
+      "additionalProperties": {
+        "additionalProperties": {
+          "type": "string"
+        },
+        "type": "object"
+      },
+      "title": "Overlay",
+      "type": "object"
+    },
+    "diff": {
+      "items": {
+        "$ref": "#/$defs/GrowthChange"
+      },
+      "title": "Diff",
+      "type": "array"
+    },
+    "evidence_refs": {
+      "items": {
+        "maxLength": 200,
+        "minLength": 1,
+        "type": "string"
+      },
+      "title": "Evidence Refs",
+      "type": "array"
+    },
+    "impact": {
+      "default": "high",
+      "enum": [
+        "low",
+        "medium",
+        "high"
+      ],
+      "title": "Impact",
+      "type": "string"
+    },
+    "reason": {
+      "maxLength": 4000,
+      "minLength": 1,
+      "title": "Reason",
+      "type": "string"
+    },
+    "approved_by": {
+      "enum": [
+        "USER_EXPLICIT",
+        "EVIDENCE_GATE"
+      ],
+      "title": "Approved By",
+      "type": "string"
+    },
+    "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+    }
+  },
+  "required": [
+    "character_id",
+    "reason",
+    "approved_by"
+  ],
+  "title": "GrowthVersion",
+  "type": "object",
+  "$schema": "https://json-schema.org/draft/2020-12/schema"
+}

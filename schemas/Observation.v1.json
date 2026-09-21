@@ -7,6 +7,13 @@
       "title": "Schema Version",
       "type": "integer"
     },
+    "confidence": {
+      "default": 1,
+      "maximum": 1,
+      "minimum": 0,
+      "title": "Confidence",
+      "type": "number"
+    },
     "kind": {
       "enum": [
         "time",
@@ -69,7 +76,8 @@
             "reading",
             "resting",
             "working",
-            "walking"
+            "walking",
+            "eating"
           ],
           "type": "string"
         },

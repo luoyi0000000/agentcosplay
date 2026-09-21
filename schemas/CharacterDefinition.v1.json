@@ -1,5 +1,58 @@
 {
   "$defs": {
+    "EmbodimentProfile": {
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "default": false,
+          "title": "Enabled",
+          "type": "boolean"
+        },
+        "sleep_enabled": {
+          "default": false,
+          "title": "Sleep Enabled",
+          "type": "boolean"
+        },
+        "hunger_enabled": {
+          "default": false,
+          "title": "Hunger Enabled",
+          "type": "boolean"
+        },
+        "physical_discomfort_enabled": {
+          "default": false,
+          "title": "Physical Discomfort Enabled",
+          "type": "boolean"
+        },
+        "weather_sensitivity": {
+          "default": 0,
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Weather Sensitivity",
+          "type": "number"
+        },
+        "social_capacity_enabled": {
+          "default": false,
+          "title": "Social Capacity Enabled",
+          "type": "boolean"
+        },
+        "custom_axes": {
+          "additionalProperties": {
+            "maximum": 1,
+            "minimum": 0,
+            "type": "number"
+          },
+          "maxProperties": 10,
+          "propertyNames": {
+            "maxLength": 200,
+            "minLength": 1
+          },
+          "title": "Custom Axes",
+          "type": "object"
+        }
+      },
+      "title": "EmbodimentProfile",
+      "type": "object"
+    },
     "Fact": {
       "additionalProperties": false,
       "properties": {
@@ -89,6 +142,110 @@
       },
       "title": "GrowthPolicy",
       "type": "object"
+    },
+    "VoiceProfile": {
+      "additionalProperties": false,
+      "properties": {
+        "verbosity_default": {
+          "default": "balanced",
+          "enum": [
+            "brief",
+            "balanced",
+            "detailed"
+          ],
+          "title": "Verbosity Default",
+          "type": "string"
+        },
+        "sentence_length": {
+          "default": "varied",
+          "enum": [
+            "short",
+            "varied",
+            "long"
+          ],
+          "title": "Sentence Length",
+          "type": "string"
+        },
+        "directness": {
+          "default": "direct",
+          "enum": [
+            "gentle",
+            "direct",
+            "blunt"
+          ],
+          "title": "Directness",
+          "type": "string"
+        },
+        "addressing_style": {
+          "default": "natural",
+          "maxLength": 300,
+          "title": "Addressing Style",
+          "type": "string"
+        },
+        "self_reference_style": {
+          "default": "natural",
+          "maxLength": 300,
+          "title": "Self Reference Style",
+          "type": "string"
+        },
+        "humor_style": {
+          "default": "character-appropriate",
+          "maxLength": 300,
+          "title": "Humor Style",
+          "type": "string"
+        },
+        "emotional_expressiveness": {
+          "default": "balanced",
+          "enum": [
+            "reserved",
+            "balanced",
+            "expressive"
+          ],
+          "title": "Emotional Expressiveness",
+          "type": "string"
+        },
+        "catchphrases": {
+          "items": {
+            "maxLength": 4000,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 8,
+          "title": "Catchphrases",
+          "type": "array"
+        },
+        "stage_direction_policy": {
+          "default": "occasional",
+          "enum": [
+            "none",
+            "occasional",
+            "expressive"
+          ],
+          "title": "Stage Direction Policy",
+          "type": "string"
+        },
+        "repetition_tolerance": {
+          "default": "low",
+          "enum": [
+            "low",
+            "normal"
+          ],
+          "title": "Repetition Tolerance",
+          "type": "string"
+        },
+        "dialogue_examples": {
+          "items": {
+            "maxLength": 4000,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 10,
+          "title": "Dialogue Examples",
+          "type": "array"
+        }
+      },
+      "title": "VoiceProfile",
+      "type": "object"
     }
   },
   "additionalProperties": false,
@@ -154,6 +311,12 @@
     },
     "growth": {
       "$ref": "#/$defs/GrowthPolicy"
+    },
+    "voice": {
+      "$ref": "#/$defs/VoiceProfile"
+    },
+    "embodiment": {
+      "$ref": "#/$defs/EmbodimentProfile"
     },
     "revision": {
       "default": 1,

@@ -1,0 +1,158 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "maxLength": 200,
+      "minLength": 1,
+      "title": "Id",
+      "type": "string"
+    },
+    "owner_id": {
+      "maxLength": 200,
+      "minLength": 1,
+      "title": "Owner Id",
+      "type": "string"
+    },
+    "character_id": {
+      "maxLength": 200,
+      "minLength": 1,
+      "title": "Character Id",
+      "type": "string"
+    },
+    "semantic_key": {
+      "maxLength": 200,
+      "minLength": 1,
+      "title": "Semantic Key",
+      "type": "string"
+    },
+    "subject": {
+      "enum": [
+        "owner",
+        "character",
+        "project"
+      ],
+      "title": "Subject",
+      "type": "string"
+    },
+    "value": {
+      "maxLength": 4000,
+      "minLength": 1,
+      "title": "Value",
+      "type": "string"
+    },
+    "evidence_refs": {
+      "items": {
+        "maxLength": 200,
+        "minLength": 1,
+        "type": "string"
+      },
+      "maxItems": 20,
+      "minItems": 1,
+      "title": "Evidence Refs",
+      "type": "array"
+    },
+    "confidence": {
+      "maximum": 1,
+      "minimum": 0,
+      "title": "Confidence",
+      "type": "number"
+    },
+    "authority": {
+      "enum": [
+        "USER_EXPLICIT",
+        "USER_MANUAL",
+        "ADMIN_CONFIG",
+        "TOOL_VERIFIED",
+        "HOST_OBSERVED",
+        "MODEL_DERIVED",
+        "INFERRED",
+        "SIMULATED"
+      ],
+      "title": "Authority",
+      "type": "string"
+    },
+    "sensitivity": {
+      "default": "private",
+      "enum": [
+        "public",
+        "private",
+        "sensitive"
+      ],
+      "title": "Sensitivity",
+      "type": "string"
+    },
+    "validity": {
+      "default": "active",
+      "enum": [
+        "active",
+        "archived",
+        "superseded",
+        "expired",
+        "forgotten"
+      ],
+      "title": "Validity",
+      "type": "string"
+    },
+    "legacy_unverified": {
+      "default": false,
+      "title": "Legacy Unverified",
+      "type": "boolean"
+    },
+    "valid_from": {
+      "format": "date-time",
+      "title": "Valid From",
+      "type": "string"
+    },
+    "valid_to": {
+      "anyOf": [
+        {
+          "format": "date-time",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Valid To"
+    },
+    "superseded_by": {
+      "anyOf": [
+        {
+          "maxLength": 200,
+          "minLength": 1,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Superseded By"
+    },
+    "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+    },
+    "updated_at": {
+      "format": "date-time",
+      "title": "Updated At",
+      "type": "string"
+    }
+  },
+  "required": [
+    "owner_id",
+    "character_id",
+    "semantic_key",
+    "subject",
+    "value",
+    "evidence_refs",
+    "confidence",
+    "authority",
+    "valid_from"
+  ],
+  "title": "FactRecord",
+  "type": "object",
+  "$schema": "https://json-schema.org/draft/2020-12/schema"
+}

@@ -1,0 +1,164 @@
+{
+  "$defs": {
+    "Relationship": {
+      "additionalProperties": false,
+      "properties": {
+        "stage": {
+          "default": "stranger",
+          "enum": [
+            "stranger",
+            "acquaintance",
+            "familiar",
+            "close"
+          ],
+          "title": "Stage",
+          "type": "string"
+        },
+        "trust": {
+          "default": "low",
+          "enum": [
+            "low",
+            "medium",
+            "high"
+          ],
+          "title": "Trust",
+          "type": "string"
+        },
+        "familiarity": {
+          "default": "low",
+          "enum": [
+            "low",
+            "medium",
+            "high"
+          ],
+          "title": "Familiarity",
+          "type": "string"
+        },
+        "preferred_address": {
+          "default": "",
+          "maxLength": 100,
+          "title": "Preferred Address",
+          "type": "string"
+        },
+        "interaction_style": {
+          "default": "",
+          "maxLength": 500,
+          "title": "Interaction Style",
+          "type": "string"
+        },
+        "boundaries": {
+          "items": {
+            "maxLength": 4000,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 20,
+          "title": "Boundaries",
+          "type": "array"
+        }
+      },
+      "title": "Relationship",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "character_id": {
+      "maxLength": 200,
+      "minLength": 1,
+      "title": "Character Id",
+      "type": "string"
+    },
+    "anchor": {
+      "$ref": "#/$defs/Relationship"
+    },
+    "learned": {
+      "$ref": "#/$defs/Relationship"
+    },
+    "override": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Relationship"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "closeness": {
+      "default": 0,
+      "maximum": 1,
+      "minimum": 0,
+      "title": "Closeness",
+      "type": "number"
+    },
+    "friction": {
+      "default": 0,
+      "maximum": 1,
+      "minimum": 0,
+      "title": "Friction",
+      "type": "number"
+    },
+    "last_interaction": {
+      "anyOf": [
+        {
+          "format": "date-time",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Last Interaction"
+    },
+    "last_meaningful_interaction": {
+      "anyOf": [
+        {
+          "format": "date-time",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Last Meaningful Interaction"
+    },
+    "last_transition": {
+      "anyOf": [
+        {
+          "format": "date-time",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Last Transition"
+    },
+    "evidence_refs": {
+      "items": {
+        "maxLength": 200,
+        "minLength": 1,
+        "type": "string"
+      },
+      "maxItems": 100,
+      "title": "Evidence Refs",
+      "type": "array"
+    },
+    "revision": {
+      "default": 1,
+      "title": "Revision",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "character_id"
+  ],
+  "title": "RelationshipState",
+  "type": "object",
+  "$schema": "https://json-schema.org/draft/2020-12/schema"
+}

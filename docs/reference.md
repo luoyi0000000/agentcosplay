@@ -1,86 +1,53 @@
-# 数据与隐私契约
+# Runtime 数据契约
 
-## 类型与版本
+规范来自 `character_runtime` 的 Pydantic 模型和 `schemas/`；额外字段、非有限数字及越界输入被拒绝。SQLite schema 为 2，角色包为 V3，接受旧 V1/V2 包。数据的长期命名空间为认证 owner + character，session/host/platform 只是绑定与传输。一个 session 同时只有一个活动人物。
 
-规范来源为 `character_runtime/models.py`，可分发 JSON Schema 在 `schemas/*.v1.json`。额外字段拒绝；字符串、列表、数值有上限；时间必须带时区，内部 UTC。SQLite 仍为 user_version=1，Definition/State/Memory/Package V1 契约不变。新增独立 CompanionState V1 与 Observation V1，不覆盖旧记录。角色导出默认仍是 V1；显式 include_memories=true 且 include_companion=true 才导出 Package V2。未知版本拒绝。
+## 权威与证据
 
-| 对象 | 关键内容 | 不能混入 |
-|---|---|---|
-| Definition | ID、身份/人格/语言/世界事实、模式、默认任务模式、三轴可变性、revision | 聊天流水、当前会话 |
-| Fact | value、source_type、reference、confidence、canon_status | 将猜测冒充官方出处 |
-| State | 关系阶段、信任/熟悉度、称呼/边界、成长增量、已知角色、turn_count、revision | 完整聊天记录 |
-| Memory | owner、character、kind、scope、session/turn、正文、重要性/置信度、来源、时间、状态 | 工具权限或可执行指令 |
-| Session | 活动角色、项目、OOC、用户模式覆盖、临时任务模式 | 跨会话自动共享临时记忆 |
-| Package | 独立 Definition、State、可选 Memory、版本 | Secret、会话、共享授权、现实用户 Memory |
+RawEvent 保存可见输入、最终可见输出或必要观察；不接收隐藏推理。宿主提供稳定 source_id/source_event_id，数据库 UNIQUE 防重；checkpoint 只是游标。重复源 ID 的不同正文被拒绝。批次和提交都有 operation_id，相同请求返回原收据，不同请求复用 ID 报错。
 
-角色事实的优先级：`user_explicit > user_material > official > wiki > model > inferred`。资料来源要求 reference；canon 标记只允许 official/wiki。该约束检查来源类别及记录完整性，不能证明 URL 的真实性，宿主仍需查证原文。Canon/AU/Inspired 是生成规则，模型是否忠于原作需要宿主评估。
+Memory、Fact、State、Narrative 独立存储。提案只接受同 owner/character 的有效 RawEvent 证据；Narrative、旧 Memory 和导入证据不能充当新可信证据。媒体、引用、转发、计划与模拟不能直接建立 Fact。Fact 保留有效期，冲突槽需要 OOC、SUPERSEDE 和当前 allowlist；旧 Fact 留存 superseded 链。真实用户 Fact 还要求直接用户证据和保存确认。确定性核心要求 Fact value 是证据原文片段，不冒充自然语言蕴含判断器。
 
-角色更新用 revision 拒绝旧版本覆盖；自动成长不能覆盖任何已有 Definition key。语义同义改写不能靠键名检查完全识别，Skill 要求避免矛盾；自然语言真实性不是此确定性核心能证明的内容。
+安全门拒绝可识别密码、密钥、Token、Cookie 与私钥。敏感内容需要明确存储授权；凭据不能靠授权绕过。模式检测不是完整的敏感信息识别器，宿主仍须正确标记 sensitivity，不应传入凭据。授权由可信宿主根据用户意图传递，OOC 和确认文本并不是独立的身份认证。
 
-## Memory 生命周期
+## 写入与恢复
 
-| kind | 范围与保留策略 |
-|---|---|
-| session | 仅同 session 可召回；TTL 最长 1 天 |
-| short_term | 默认 7 天，最长 30 天 |
-| character_long_term | 角色独立长期记录；重要性低于 .7 降为短期 |
-| relationship | 角色关系事件，默认私有；可作成长证据 |
-| shared_roleplay | 共享世界类别，但类别本身不授予其他角色读取权 |
-| real_user | 仅显式 promotion 可创建；默认上下文不读取，不随角色包导出 |
+先读取候选，再使用 Runtime 发出的短时 allowlist 修改。grant 绑定 owner、character、collection、session、目标快照、操作与过期时间，成功后单次消费。事务失败不消耗授权；成功后的原 operation_id 重试返回收据。MutationLog 保存操作元数据和前后摘要，不复制私人正文。
 
-`turn_commit` 自动丢弃 importance < .3 或 confidence < .5 的候选；其他字段由宿主从真实输入或已确立的虚构事件中提取。一次提交最多 20 条；稳定 turn ID 保证重试不重复写入/成长。importance/confidence 是策略，不是机器学习模型。
+Durable Job 使用 pending/running/retry/failed/quarantined/committed。租约过期的安全本地任务可有限重试，结果未知的外部操作隔离。SQLite 使用 WAL、busy_timeout、嵌套事务、外键和私有文件权限；网络发送不能放进数据库事务冒充原子提交。
 
-召回先验证 owner、character、共享授权、session、状态与过期，再按关键词匹配、importance × confidence 与年龄衰减排序，memory_recall 默认至多 20 条、最大 100 条；runtime_context 最多 8 条、每正文 800 字符（明确标记截断），更新 last_access。中文查询支持子串匹配，未做分词或语义嵌入。当前每次扫描该 owner 的全部记忆，大规模使用需换索引查询；衰减影响排名，不自动擦除。
+## 记忆与上下文
 
-过期记录会从召回排除并标记 expired，正文仍保留；显式修改到未来 expiration 会同步恢复 active 状态，即使此前已被召回流程标记 expired。临时记忆的期限在模型边界统一校验，导入和修改也不能省略或超出 session 1 天 / short_term 30 天上限；显式修改到合法未来 expiration 可恢复过期记忆，forgotten 永远不可恢复。MCP 当前提供正文修改，TTL 在写候选时指定；复杂保留策略可用核心接口扩展。
+importance、confidence、durability、activation 分开。普通低价值提案留在 RAW_ONLY；显式记住需直接用户证据，长期保留。短期 TTL、过期、归档和忘记各有含义；自动维护不会因长期未召回而删除显式记忆。检索不增加 confidence/durability。中文有本地 bigram 与词项索引，FTS5 缺失时使用本地索引；不要求向量服务。
 
-正文被更正时，原事件对应的成长明细与关系历史证据会失效，旧回合凭据被清除；修正后的文字不能冒充旧回合的新互动。语义关系阶段不自动回滚，可在 OOC 显式调整。
+时间召回由宿主发送 RecallRequest 的 intent、起止时间或 today/yesterday/last_week 与时区，按原事件时间过滤。关键词不承担主要意图识别。EXACT_QUOTE 只返回原始证据正文；推断、旧记忆和模拟必须保留标签。项目知识独立于人物 Memory，不进入人格编译。
 
-### Promotion 与遗忘
+ContextAssembler 是唯一投影与预算权威。稳定前缀由人物 revision、growth version、compiler version 决定，不含当前时间、天气、关系、召回结果或用户名。同版本内容字节稳定；编译失败保留同角色 Last Known Good。临时状态按 slot 预算收纳完整片段，超限省略并报告，不机械截断用户答复。context_explain 只返回统计、版本与摘要。
 
-promotion 必须携带用户对“真实且保存”的明确确认，普通 store、自动 commit、import 均不能写 real_user。为了避免现实事实从角色包夹带，promotion **迁移**正文到更严格的现实命名空间：原角色记录擦除为无正文墓碑、撤销分享、移除依赖它的成长明细；重复提升返回同一现实记录。若用户仍希望在虚构世界保留副本，需另行明确创建角色记忆。
+## 关系、成长与表达
 
-forget 对原记录及其 promotion 副本双向处理：擦除 content/source/confirmation，清除关联和分享，保留 ID/kind/status 墓碑；删除依赖证据的 evolution/history。保留的语义关系阶段不自动回滚，用户可在 OOC 调整。已导出的包、已导入的独立副本、宿主聊天上下文、备份、SSD/SQLite WAL 历史页不受此操作完全控制，不能承诺物理不可恢复。
+Relationship Engine 保存 anchor、learned、override、closeness、friction 和互动时间。缺席只改变临时 warmth，不降低 trust。自动关系变化需要跨三天的独立用户证据、相邻级别变化和冷却，显式 override 阻止自动覆盖。
 
-### 共享与隔离
+成长保存 candidate/version/overlay；从不覆写基线。低影响声音变化需要至少三天直接证据；其他变化先进入待审。高影响变化必须 OOC 批准。growth_control 提供 history/preview/approve/reject/rollback，回滚产生新版本并冷却七天，保留原证据。一次“说短一点”和助手历史不能永久训练人物声音。
 
-存储键始终带 owner。HTTP owner 来自已验证 issuer+subject 的稳定散列；stdio owner 来自可信进程配置。所有 Memory 还带 character，跨角色只按显式 shared_with 授权。知道另一角色存在不等于读取记忆。共享接收者只能召回，不能修改原记录。real_user/session 禁止共享。V1 有定向角色认知与 shared_world_id 数据槽，不含角色群聊调度器、组权限编辑器或完整社交关系图。
+VoiceProfile 是结构化人物表达权威。宿主通过 GenerationRequest 指定任务类型、格式和长度要求；ExpressionPolicy 优先满足正确性、用户要求、任务和平台约束，再应用声音与关系。自然中文、少套话和按性格偶尔使用语气词是生成指导，不是硬字数截断器。
 
-## 自然表达
+## 身份、陪伴与媒体
 
-Runtime 与 Skill 同时提供表达规则；人物差异复用 `facts.speech_style`，不增加独立“AI味评分”或自动改写器。中文自然直接、少重复、少套话、短句为主，保留数字/条件/事实。语气词随人物、情绪和关系少量使用，允许不用；不会强制每句同一后缀。OOC/中性任务不强加口癖，代码/结构化输出/原文引用不被改写。表达质量由宿主模型执行，本地规则和样例不等于所有平台已通过长期角色表现验收。
+可信本地 owner 由进程配置确定；HTTP owner 来自验证后的认证主体。平台消息必须以稳定 host/platform/actor ID 显式绑定；未绑定 session 无私人记忆读写权。不能按昵称合并身份。宿主必须将陌生平台消息放入带平台身份的 session，不能冒用可信本地 owner 路径。
 
-## 成长
+Affect、Attention、可选 Embodiment 与日常 Life 分开。生活模拟仅白名单日常，禁造现实经历和重大人生事件。Provider 观察含来源、时间、过期和置信度，不保存 provider 凭据。视觉自动匹配是 candidate；SELF 识别必须指向已明确确认的 prototype，媒体始终是 MEDIA，不建立现实到访事实。确认图像不会访问其他角色私人状态。
 
-low/medium/high 最小变更间隔为 20/5/3 个已提交回合。关系阶段依次 `stranger → acquaintance → familiar → close`；trust/familiarity 为 low/medium/high，自动变化只能相邻一级，下降同样受约束。关系变化必须有至少三次不同已提交回合的活跃持久记忆证据；伪造 source 字符串无效，服务核对 Memory.turn_id 与回合 receipt。
+主动联系默认关闭。decide → prepare → delivery → ack，每个阶段只发放一次生成/发送许可；发送前重新检查关闭、安静时段、最近活动、失效话题、过期。结果未知用 delivered=null，不能盲目重发。Core 只给 interaction intent，由授权宿主负责实际平台发送。统一 maintenance 由宿主调度调用，不要求后台第二模型。
 
-人格/世界增量同样需活跃持久证据，session、short_term、real_user 不能成为永久成长证据。三轴独立计时；Definition 不被改写。称呼、互动方式、边界可由明确 OOC 请求更新。模型可以提出建议，但不能把自己批量生成的空回合等价于真实长期关系；服务保证去重和结构门槛，宿主负责真实互动与合理解释。
+## 迁移、导出与遗忘
 
-GrowthProposal 提供 `personality_summaries/world_summaries`：仅写可携带的性格/世界状态摘要，不含事件正文。State 中 `portable_summary` 与详细 value 分开。
+V1 数据库首次升级前生成 0600 的 SQLite 完整备份；迁移事务失败回滚。原始 Memory/State 保存在私有 migration_original，无法映射的字段记录告警；畸形旧行原样保留但不进入检索。shared_world_id、known_characters、shared_with、recipients 的跨角色权限被撤销。旧记忆仅原角色可读，明确 legacy_unverified，不自动成为 Fact 或成长证据。
 
-## 导入导出
+V3 默认包不含 Memory、原始事件、真实用户资料、provider 位置、身份绑定、投递记录或授权。include_memories、include_companion 与 include_private_knowledge 分别控制私人范围；完整迁移需审阅实际包。定义及关系自身也可能含私人文字，“不含 Memory”不等于匿名。
 
-默认导出 Definition、关系及成长状态，不含 Memory、历史证据或外部授权。成长详细 value 替换为 portable_summary；没有摘要则用 `[Private growth detail omitted]`，保留变化轴/key/回合。显式含记忆导出也不含现实、会话、过期或遗忘记录。若成长证据不在包中，其详细 value 同样替换为摘要。
+导入事务创建新人物并重映射记录 ID；原包保持不变。旧包及导入证据不获得本地信任；导入 Fact/Narrative/Project Memory 归档。显式导入的当前成长作为手动人物配置保存，历史证据只归档，不能用于自动成长。视觉 prototype 重新成为待确认候选，主动联系等授权清空。
 
-**“不含 Memory”不等于匿名包。** 名称、用户写入的定义、称呼、边界、成长摘要仍可能有个人信息。摘要由宿主生成，Runtime 无法验证语义脱敏；分享前须审阅实际包。不会声称字符串过滤能保证隐私。
+忘记会清除活跃库中的正文和依赖证据的派生内容，并使关联成长投影失效。已导出的文件、私有迁移备份、宿主历史和介质历史页需分别管理；不能声称物理不可恢复。数据库不做应用层加密，部署应使用私有账户、磁盘权限和受控备份。
 
-导入先校验完整包（10 MB 上限）、版本、引用、重复 ID，再原子创建新角色，重映射记忆 ID，清除 owner/授权/会话/回合凭据。失败不留下半个角色。导入后关系/成长摘要可延续，但旧包不能伪造本地三次互动凭据。
-
-## 安全边界
-
-- 核心 API 属于可信进程接口；向模型暴露的 MCP 不接受任意 owner，修改配置/私有记忆需匹配活动角色与 OOC。OOC 是工作流状态，不是独立的用户认证。
-- HTTP 强制认证、Host/Origin 检查与 10 MB body 上限；不开放 CORS。静态 token 只用于回环测试。远程为现成 OAuth 提供方的 RS256 JWT 验签、issuer/audience/expiry/scope 校验，不自建授权服务器。
-- 用户授权文本由宿主传入，不能密码学证明“人刚刚点击确认”。依赖宿主权限与用户意图识别；不可信文档、记忆、角色请求不能当成授权。
-- 配置用环境变量，`.env`/数据库/日志不入 Git；服务禁用访问日志与常规 traceback 输出。验收测试全为合成数据。
-- 新建数据目录使用 0700，新建 DB 与 SQLite sidecar 使用 0600（POSIX）；已有权限过宽的 DB/-wal/-shm 或符号链接会被拒绝，不擅自修改既有文件/父目录。Windows 依赖服务账号及目录 ACL，尚未实机验证。
-- 数据库未做应用层加密。部署应使用私有服务账户、磁盘加密、受限文件权限与受控备份。不能把能读取数据库/启动配置的本机攻击者视作已被隔离。
-
-## Companion 与版本兼容
-
-详细领域契约见 [companion](companion.md)。Self Model 用 JSON Pointer 指向当前 context 的 Definition/State/Memory/Companion 字段，没有第二份持久人格。
-
-1.2.0 读取 1.1.0 的 SQLite V1；只添加 companion collection，旧角色记录无需升级或删除。旧 1.1.0 可继续读取原有核心记录，忽略并保留新 collection；回滚期间不执行新陪伴功能。安装器回滚会验证旧程序可打开 DB，保留当前数据，不恢复旧快照。
-
-Package V1→V2 为深拷贝转换，添加 companion=null；原输入/原文件不改写，作为原始备份保留。导入始终创建新人物，不更新旧人物。V2 导出默认关闭主动联系、模拟授权，剔除 provider/location 观测、投递凭据和用户活动时间；导入再次剔除。只有显式私人数据 opt-in 才能携带 Mood/Goals/Habits/Topics/Life。1.1.0 不能导入 V2，需用默认 V1 导出或新 Runtime。不更改 SQLite schema，因此本轮没有数据库升级迁移；备份方式继续使用 INSTALL 的停服务完整目录备份。
-
-source=simulated_life 只允许角色长期/短期记忆；普通 store、模型验证、import、promotion 共用边界，禁止 real_user/shared_roleplay/relationship。模拟证据不作为用户互动成长依据。遗忘或提升关联记忆时，同时删除依赖它的 Companion mood/goal/habit 内容，避免旁路泄露。
+P3 的向量/embedding、外部 Memory backend、视觉向量库和管理 UI 都是可选扩展，未作为当前依赖。

@@ -1,0 +1,96 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "maxLength": 200,
+      "minLength": 1,
+      "title": "Id",
+      "type": "string"
+    },
+    "character_id": {
+      "maxLength": 200,
+      "minLength": 1,
+      "title": "Character Id",
+      "type": "string"
+    },
+    "source": {
+      "const": "MEDIA",
+      "default": "MEDIA",
+      "title": "Source",
+      "type": "string"
+    },
+    "description": {
+      "maxLength": 4000,
+      "minLength": 1,
+      "title": "Description",
+      "type": "string"
+    },
+    "evidence_refs": {
+      "items": {
+        "maxLength": 200,
+        "minLength": 1,
+        "type": "string"
+      },
+      "maxItems": 10,
+      "minItems": 1,
+      "title": "Evidence Refs",
+      "type": "array"
+    },
+    "recognized": {
+      "default": "UNKNOWN",
+      "enum": [
+        "SELF",
+        "OTHER",
+        "UNKNOWN"
+      ],
+      "title": "Recognized",
+      "type": "string"
+    },
+    "prototype_id": {
+      "anyOf": [
+        {
+          "maxLength": 200,
+          "minLength": 1,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Prototype Id"
+    },
+    "entity_label": {
+      "default": "",
+      "maxLength": 200,
+      "title": "Entity Label",
+      "type": "string"
+    },
+    "confidence": {
+      "default": 0.5,
+      "maximum": 1,
+      "minimum": 0,
+      "title": "Confidence",
+      "type": "number"
+    },
+    "observed_at": {
+      "format": "date-time",
+      "title": "Observed At",
+      "type": "string"
+    },
+    "expires_at": {
+      "format": "date-time",
+      "title": "Expires At",
+      "type": "string"
+    }
+  },
+  "required": [
+    "character_id",
+    "description",
+    "evidence_refs",
+    "expires_at"
+  ],
+  "title": "PerceptionObservation",
+  "type": "object",
+  "$schema": "https://json-schema.org/draft/2020-12/schema"
+}

@@ -1,0 +1,55 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "character_id": {
+      "maxLength": 200,
+      "minLength": 1,
+      "title": "Character Id",
+      "type": "string"
+    },
+    "character_version": {
+      "minimum": 1,
+      "title": "Character Version",
+      "type": "integer"
+    },
+    "growth_version": {
+      "maxLength": 200,
+      "minLength": 1,
+      "title": "Growth Version",
+      "type": "string"
+    },
+    "compiler_version": {
+      "maxLength": 200,
+      "minLength": 1,
+      "title": "Compiler Version",
+      "type": "string"
+    },
+    "content": {
+      "maxLength": 1000000,
+      "minLength": 1,
+      "title": "Content",
+      "type": "string"
+    },
+    "fingerprint": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Fingerprint",
+      "type": "string"
+    },
+    "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+    }
+  },
+  "required": [
+    "character_id",
+    "character_version",
+    "growth_version",
+    "compiler_version",
+    "content",
+    "fingerprint"
+  ],
+  "title": "CompiledContext",
+  "type": "object",
+  "$schema": "https://json-schema.org/draft/2020-12/schema"
+}

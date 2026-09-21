@@ -220,6 +220,7 @@ def build_release(root: Path, source: Path) -> Path:
             "pyproject.toml",
             "uv.lock",
             "build-constraints.txt",
+            "LICENSE",
         ):
             item = source / name
             if item.is_symlink() or (

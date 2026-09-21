@@ -160,30 +160,6 @@
       "title": "Relationship History",
       "type": "array"
     },
-    "known_characters": {
-      "items": {
-        "maxLength": 200,
-        "minLength": 1,
-        "type": "string"
-      },
-      "maxItems": 100,
-      "title": "Known Characters",
-      "type": "array"
-    },
-    "shared_world_id": {
-      "anyOf": [
-        {
-          "maxLength": 200,
-          "minLength": 1,
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "default": null,
-      "title": "Shared World Id"
-    },
     "turn_count": {
       "default": 0,
       "minimum": 0,

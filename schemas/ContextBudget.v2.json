@@ -1,0 +1,79 @@
+{
+  "additionalProperties": false,
+  "description": "Character caps are authoritative; token counts are diagnostic estimates only.",
+  "properties": {
+    "stable_character": {
+      "default": 16000,
+      "maximum": 65536,
+      "minimum": 0,
+      "title": "Stable Character",
+      "type": "integer"
+    },
+    "relationship": {
+      "default": 1800,
+      "maximum": 65536,
+      "minimum": 0,
+      "title": "Relationship",
+      "type": "integer"
+    },
+    "state": {
+      "default": 2200,
+      "maximum": 65536,
+      "minimum": 0,
+      "title": "State",
+      "type": "integer"
+    },
+    "memory": {
+      "default": 7200,
+      "maximum": 65536,
+      "minimum": 0,
+      "title": "Memory",
+      "type": "integer"
+    },
+    "goals": {
+      "default": 2200,
+      "maximum": 65536,
+      "minimum": 0,
+      "title": "Goals",
+      "type": "integer"
+    },
+    "open_loops": {
+      "default": 2200,
+      "maximum": 65536,
+      "minimum": 0,
+      "title": "Open Loops",
+      "type": "integer"
+    },
+    "life": {
+      "default": 2200,
+      "maximum": 65536,
+      "minimum": 0,
+      "title": "Life",
+      "type": "integer"
+    },
+    "perception": {
+      "default": 1600,
+      "maximum": 65536,
+      "minimum": 0,
+      "title": "Perception",
+      "type": "integer"
+    },
+    "external_context": {
+      "default": 2400,
+      "maximum": 65536,
+      "minimum": 0,
+      "title": "External Context",
+      "type": "integer"
+    },
+    "total_chars": {
+      "default": 36000,
+      "maximum": 131072,
+      "minimum": 0,
+      "title": "Total Chars",
+      "type": "integer"
+    }
+  },
+  "title": "ContextBudget",
+  "type": "object",
+  "$schema": "https://json-schema.org/draft/2020-12/schema"
+}

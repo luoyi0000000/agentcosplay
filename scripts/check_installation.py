@@ -21,7 +21,7 @@ from mcp import Client
 from mcp.client.stdio import StdioServerParameters
 from mcp.client.streamable_http import streamable_http_client
 
-from character_runtime.health import call
+from character_runtime.health import call, remember
 
 SOURCE = Path(__file__).resolve().parents[1]
 
@@ -36,7 +36,11 @@ async def stdio(root: Path, character: str | None = None) -> str:
                 await call(
                     client,
                     "character_write",
-                    request={"action": "create", "definition": {"name": "安装验收合成人物"}},
+                    request={
+                        "action": "create",
+                        "operation_id": "create-install",
+                        "definition": {"name": "安装验收合成人物"},
+                    },
                 )
             )["id"]
             await call(
@@ -44,17 +48,11 @@ async def stdio(root: Path, character: str | None = None) -> str:
                 "session_control",
                 request={"action": "open", "session_id": "install-test", "character_id": character},
             )
-            await call(
-                client,
-                "turn_commit",
-                session_id="install-test",
-                turn_id="1",
-                candidates=[{"content": "保留下来的合成记忆", "importance": 0.9}],
-            )
+            await remember(client, "install-test", "install-1", "保留下来的合成记忆")
         else:
             context = await call(client, "runtime_context", session_id="install-test")
-            assert context["definition"]["id"] == character
-            assert "保留下来的合成记忆" in [m["content"] for m in context["memories"]]
+            assert json.loads(context["stable_prefix"])["character"]["id"] == character
+            assert "保留下来的合成记忆" in str(context["temporary"])
         return character
 
 
@@ -84,15 +82,9 @@ async def shared(root: Path, character: str) -> None:
             (clients[0], clients[1], "gateway-a", "gateway-b", "A入口写入"),
             (clients[1], clients[0], "gateway-b", "gateway-a", "B入口写入"),
         ]:
-            await call(
-                writer,
-                "turn_commit",
-                session_id=session,
-                turn_id="1",
-                candidates=[{"content": content, "importance": 0.9}],
-            )
+            await remember(writer, session, "gateway-" + session, content)
             context = await call(reader, "runtime_context", session_id=other)
-            assert content in [m["content"] for m in context["memories"]]
+            assert content in str(context["temporary"])
 
 
 def main() -> None:
@@ -107,6 +99,7 @@ def main() -> None:
             "pyproject.toml",
             "uv.lock",
             "build-constraints.txt",
+            "LICENSE",
         ):
             source = SOURCE / name
             if source.is_dir():
@@ -205,7 +198,6 @@ def main() -> None:
                         "uninstall-preserves-database",
                         "reinstall-preserves-memory",
                     ],
-                    "real_host_apps_tested": False,
                 }
             )
         )

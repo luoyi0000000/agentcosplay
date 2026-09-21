@@ -1,0 +1,138 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "source_event_id": {
+      "maxLength": 200,
+      "minLength": 1,
+      "title": "Source Event Id",
+      "type": "string"
+    },
+    "source_id": {
+      "maxLength": 200,
+      "minLength": 1,
+      "title": "Source Id",
+      "type": "string"
+    },
+    "source_kind": {
+      "enum": [
+        "USER_DIRECT",
+        "ASSISTANT_VISIBLE",
+        "QUOTED",
+        "FORWARDED",
+        "MEDIA_DERIVED",
+        "TOOL_RESULT",
+        "WEB_CONTENT",
+        "SIMULATED",
+        "PLANNED"
+      ],
+      "title": "Source Kind",
+      "type": "string"
+    },
+    "content": {
+      "maxLength": 4000,
+      "title": "Content",
+      "type": "string"
+    },
+    "timestamp": {
+      "format": "date-time",
+      "title": "Timestamp",
+      "type": "string"
+    },
+    "host": {
+      "default": "",
+      "maxLength": 100,
+      "title": "Host",
+      "type": "string"
+    },
+    "platform": {
+      "default": "",
+      "maxLength": 100,
+      "title": "Platform",
+      "type": "string"
+    },
+    "conversation_id": {
+      "default": "",
+      "maxLength": 200,
+      "title": "Conversation Id",
+      "type": "string"
+    },
+    "actor_id": {
+      "default": "",
+      "maxLength": 200,
+      "title": "Actor Id",
+      "type": "string"
+    },
+    "source_ref": {
+      "default": "",
+      "maxLength": 1000,
+      "title": "Source Ref",
+      "type": "string"
+    },
+    "sensitivity": {
+      "default": "private",
+      "enum": [
+        "public",
+        "private",
+        "sensitive"
+      ],
+      "title": "Sensitivity",
+      "type": "string"
+    },
+    "id": {
+      "maxLength": 200,
+      "minLength": 1,
+      "title": "Id",
+      "type": "string"
+    },
+    "owner_id": {
+      "maxLength": 200,
+      "minLength": 1,
+      "title": "Owner Id",
+      "type": "string"
+    },
+    "character_id": {
+      "maxLength": 200,
+      "minLength": 1,
+      "title": "Character Id",
+      "type": "string"
+    },
+    "session_id": {
+      "maxLength": 200,
+      "minLength": 1,
+      "title": "Session Id",
+      "type": "string"
+    },
+    "received_at": {
+      "format": "date-time",
+      "title": "Received At",
+      "type": "string"
+    },
+    "validity": {
+      "default": "active",
+      "enum": [
+        "active",
+        "forgotten"
+      ],
+      "title": "Validity",
+      "type": "string"
+    },
+    "legacy_unverified": {
+      "default": false,
+      "title": "Legacy Unverified",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "source_event_id",
+    "source_id",
+    "source_kind",
+    "content",
+    "timestamp",
+    "owner_id",
+    "character_id",
+    "session_id"
+  ],
+  "title": "RawEvent",
+  "type": "object",
+  "$schema": "https://json-schema.org/draft/2020-12/schema"
+}
