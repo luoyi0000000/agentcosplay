@@ -16,7 +16,23 @@ from character_runtime.companion_models import CompanionUpdate, SettingsUpdate, 
 from character_runtime.health import call, protocol_check, reject
 from character_runtime.models import CharacterDefinition
 from character_runtime.runtime import Runtime
+from character_runtime.safety import check_content
 from character_runtime.storage import SQLiteStorage
+
+
+def safety_boundaries() -> None:
+    """Random hexadecimal IDs are not personal numbers; standalone numbers remain gated.
+
+    随机十六进制标识符不是个人号码；独立号码仍必须通过敏感信息授权。
+    """
+    check_content('{"id":"abcdef123456789012345678abcdef12"}')
+    for content in ("123456789012345678", "号码12345678901234567X。", "123-45-6789"):
+        try:
+            check_content(content)
+        except ValueError:
+            pass
+        else:
+            raise AssertionError("Sensitive standalone number was accepted")
 
 
 async def advanced(client: Client) -> None:
@@ -375,7 +391,7 @@ async def advanced(client: Client) -> None:
         client,
         "runtime_context",
         session_id="advanced",
-        generation={"intent": "CODING", "explicit_format": "json"},
+        generation={"intent": "CODING", "explicit_format": "json", "payload_only": True},
     )
     expression = next(
         f["payload"]["expression_policy"]
@@ -407,7 +423,13 @@ async def advanced(client: Client) -> None:
     imported_context = await call(client, "runtime_context", session_id="imported")
     prefix = json.loads(imported_context["stable_prefix"])
     assert prefix["growth_overlay"]["voice"]["verbosity_default"] == "brief"
-    imported_memories = (await call(client, "memory_recall", session_id="imported"))["memories"]
+    assert (await call(client, "memory_recall", session_id="imported"))["memories"] == []
+    imported_memories = (
+        await call(
+            client, "memory_recall", session_id="imported", request={"intent": "AUTOBIOGRAPHICAL"}
+        )
+    )["memories"]
+    assert all(m["use_decision"]["policy"] == "UNCERTAIN" for m in imported_memories)
     assert len(imported_memories) == 3 and all(m["legacy_unverified"] for m in imported_memories)
     await call(
         client,
@@ -471,6 +493,9 @@ def recovery(root: Path) -> None:
         )
         decision = rt.companion.decide(cid)
         assert decision.should_contact
+        assert decision.context["motive"] == "pending_followup"
+        assert decision.context["opportunity"] == "idle_window"
+        assert decision.context["basis"] == "configured intent, not a completed event"
         with ThreadPoolExecutor(max_workers=2) as pool:
             claims = list(
                 pool.map(lambda runtime: runtime.companion.prepare(cid, decision.id), runtimes)
@@ -507,6 +532,34 @@ def recovery(root: Path) -> None:
         first = rt.companion.prepare(cid2, decision.id)
         rt.companion.record_activity(cid2)
         assert not rt.companion.delivery(cid2, decision.id, first.claim_id or "").should_contact
+        # Equal relevant topics prefer the less recently mentioned one, after hard gates.
+        # 同等相关话题在通过硬门之后优先较久未提及者，不绕过冷却或安静时段。
+        from character_runtime.companion_models import Topic
+
+        cid3 = rt.characters.create(CharacterDefinition(name="synthetic-recency")).id
+        state = rt.companion.get(cid3)
+        state.settings.proactive_contact = True
+        state.settings.quiet_start = state.settings.quiet_end = 0
+        state.topics = [
+            Topic(
+                id="old",
+                description="older",
+                priority=0.5,
+                relevance=1,
+                cooldown_seconds=86400,
+                last_mentioned_at=instant - timedelta(days=3),
+            ),
+            Topic(
+                id="recent",
+                description="recent",
+                priority=0.5,
+                relevance=1,
+                cooldown_seconds=86400,
+                last_mentioned_at=instant - timedelta(days=1),
+            ),
+        ]
+        rt.companion._save(state)
+        assert rt.companion.decide(cid3).topic_id == "topic:old"
         print(
             "PASS recovery: single generation/send grant, unknown delivery quarantine, "
             "activity invalidation"
@@ -517,6 +570,7 @@ def recovery(root: Path) -> None:
 
 
 async def main() -> None:
+    safety_boundaries()
     with tempfile.TemporaryDirectory(prefix="agentcosplay-acceptance-") as directory:
         params = StdioServerParameters(
             command=sys.executable,

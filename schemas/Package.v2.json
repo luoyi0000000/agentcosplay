@@ -2,6 +2,7 @@
   "$defs": {
     "Candidate": {
       "additionalProperties": false,
+      "description": "Bound a proposed memory summary; confidence does not establish factual authority.\n\n约束记忆摘要候选；置信度不建立事实权威。",
       "properties": {
         "content": {
           "maxLength": 4000,
@@ -62,8 +63,63 @@
       "title": "Candidate",
       "type": "object"
     },
+    "CatchphraseRule": {
+      "additionalProperties": false,
+      "description": "Optional suitability and repetition limits, never mandatory text insertion.\n\n可选适用场景与重复限制，绝不代表必须插入某个口头禅。",
+      "properties": {
+        "phrase": {
+          "maxLength": 80,
+          "minLength": 1,
+          "title": "Phrase",
+          "type": "string"
+        },
+        "usage": {
+          "items": {
+            "maxLength": 80,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 6,
+          "title": "Usage",
+          "type": "array"
+        },
+        "intensity": {
+          "default": "light",
+          "enum": [
+            "light",
+            "normal",
+            "emphatic"
+          ],
+          "title": "Intensity",
+          "type": "string"
+        },
+        "cooldown_seconds": {
+          "default": 120,
+          "maximum": 86400,
+          "minimum": 0,
+          "title": "Cooldown Seconds",
+          "type": "integer"
+        },
+        "avoid_contexts": {
+          "items": {
+            "maxLength": 40,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 12,
+          "title": "Avoid Contexts",
+          "type": "array"
+        }
+      },
+      "required": [
+        "phrase"
+      ],
+      "title": "CatchphraseRule",
+      "type": "object"
+    },
     "CharacterDefinition": {
       "additionalProperties": false,
+      "description": "Portable stable profile with explicit source facts and revision, not live session state.\n\n包含显式来源事实及版本的稳定可迁移档案，不存放实时会话状态。",
       "properties": {
         "schema_version": {
           "const": 1,
@@ -148,6 +204,7 @@
     },
     "CharacterState": {
       "additionalProperties": false,
+      "description": "Retain baseline compatibility state; domain engines own their canonical projections.\n\n保留基线兼容状态；各领域引擎管理对应规范投影。",
       "properties": {
         "character_id": {
           "maxLength": 200,
@@ -211,7 +268,8 @@
       "type": "object"
     },
     "CompanionState": {
-      "additionalProperties": false,
+      "additionalProperties": true,
+      "description": "Current life state plus an opaque historical Mood archive.\n\n当前生活状态附带不透明的历史 Mood 档案；未知字段往返保留，不参与当前决策。",
       "properties": {
         "schema_version": {
           "const": 1,
@@ -235,7 +293,12 @@
           "$ref": "#/$defs/Settings"
         },
         "mood": {
-          "$ref": "#/$defs/Mood"
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "description": "Read-only legacy archive",
+          "title": "Mood",
+          "type": "object"
         },
         "goals": {
           "items": {
@@ -359,6 +422,7 @@
     },
     "Decision": {
       "additionalProperties": false,
+      "description": "Persist a reserved intent and delivery state, not evidence that a message was sent.\n\n保存预留意图及投递状态，不证明消息已经发送。",
       "properties": {
         "id": {
           "maxLength": 200,
@@ -461,8 +525,33 @@
       "title": "Decision",
       "type": "object"
     },
+    "DialogueExample": {
+      "additionalProperties": false,
+      "description": "A curated meaning-to-expression example; assistant history is never baseline authority.\n\n精选的语义到人物表达示范；助手历史输出绝不自动成为基线权威。",
+      "properties": {
+        "meaning": {
+          "maxLength": 500,
+          "minLength": 1,
+          "title": "Meaning",
+          "type": "string"
+        },
+        "character": {
+          "maxLength": 1000,
+          "minLength": 1,
+          "title": "Character",
+          "type": "string"
+        }
+      },
+      "required": [
+        "meaning",
+        "character"
+      ],
+      "title": "DialogueExample",
+      "type": "object"
+    },
     "EmbodimentProfile": {
       "additionalProperties": false,
+      "description": "Opt into simulated bodily axes; human physiology is never assumed by default.\n\n显式开启模拟身体维度，不默认假定人类生理需求。",
       "properties": {
         "enabled": {
           "default": false,
@@ -516,6 +605,7 @@
     },
     "Evolution": {
       "additionalProperties": false,
+      "description": "Preserve legacy evolution evidence references separately from approved Growth versions.\n\n保存旧演化的证据引用，与已批准的 Growth 版本分离。",
       "properties": {
         "axis": {
           "enum": [
@@ -578,6 +668,7 @@
     },
     "Fact": {
       "additionalProperties": false,
+      "description": "Describe a sourced character-definition claim, separate from runtime FactRecord.\n\n描述有来源的角色定义声明，与 Runtime FactRecord 分离。",
       "properties": {
         "value": {
           "maxLength": 4000,
@@ -631,6 +722,7 @@
     },
     "Goal": {
       "additionalProperties": false,
+      "description": "Track configured intent and progress; a plan is not evidence of a completed event.\n\n记录配置意图及进度；计划不是已完成事件的证据。",
       "properties": {
         "id": {
           "maxLength": 200,
@@ -750,6 +842,7 @@
     },
     "GrowthPolicy": {
       "additionalProperties": false,
+      "description": "Bound permitted changes by character domain rather than grant write authority.\n\n按角色领域限制允许变化，不授予写权限。",
       "properties": {
         "personality_mutability": {
           "default": "low",
@@ -787,6 +880,7 @@
     },
     "Habit": {
       "additionalProperties": false,
+      "description": "Track gradual habit support separately from immutable character identity.\n\n记录渐进习惯支持，与不可变角色身份分离。",
       "properties": {
         "id": {
           "maxLength": 200,
@@ -873,8 +967,10 @@
       "title": "Habit",
       "type": "object"
     },
+    "JsonValue": {},
     "LifeState": {
       "additionalProperties": false,
+      "description": "Track simulated activity timing; simulation must not become shared experience.\n\n记录模拟活动时序；模拟不能变成用户共同经历。",
       "properties": {
         "activity": {
           "default": "idle",
@@ -962,6 +1058,7 @@
     },
     "Memory": {
       "additionalProperties": false,
+      "description": "Store a scoped canonical summary with provenance and validity, never an exact quote.\n\n保存带作用域、来源及有效性的规范摘要，不冒充原话。",
       "properties": {
         "id": {
           "maxLength": 200,
@@ -980,6 +1077,17 @@
           "minLength": 1,
           "title": "Character Id",
           "type": "string"
+        },
+        "record_scope": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/MemoryScope"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         },
         "kind": {
           "anyOf": [
@@ -1288,47 +1396,23 @@
       "title": "Memory",
       "type": "object"
     },
-    "Mood": {
+    "MemoryScope": {
       "additionalProperties": false,
+      "description": "Explicit memory audience, independent of confidence and retrieval scores.\n\n显式记忆受众；置信度、召回分数和同群关系均不授予访问权。",
       "properties": {
-        "label": {
-          "default": "neutral",
-          "maxLength": 80,
-          "title": "Label",
+        "kind": {
+          "enum": [
+            "PARTICIPANT_CHARACTER",
+            "ENDPOINT_CHARACTER"
+          ],
+          "title": "Kind",
           "type": "string"
         },
-        "intensity": {
-          "default": 0,
-          "maximum": 1,
-          "minimum": 0,
-          "title": "Intensity",
-          "type": "number"
-        },
-        "reason": {
-          "default": "",
-          "maxLength": 500,
-          "title": "Reason",
-          "type": "string"
-        },
-        "evidence_ids": {
-          "items": {
-            "maxLength": 200,
-            "minLength": 1,
-            "type": "string"
-          },
-          "maxItems": 5,
-          "title": "Evidence Ids",
-          "type": "array"
-        },
-        "updated_at": {
-          "format": "date-time",
-          "title": "Updated At",
-          "type": "string"
-        },
-        "influenced_at": {
+        "participant_id": {
           "anyOf": [
             {
-              "format": "date-time",
+              "maxLength": 200,
+              "minLength": 1,
               "type": "string"
             },
             {
@@ -1336,14 +1420,32 @@
             }
           ],
           "default": null,
-          "title": "Influenced At"
+          "title": "Participant Id"
+        },
+        "endpoint_id": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Endpoint Id"
         }
       },
-      "title": "Mood",
+      "required": [
+        "kind"
+      ],
+      "title": "MemoryScope",
       "type": "object"
     },
     "Observation": {
       "additionalProperties": false,
+      "description": "Keep observation, fetch and expiry times distinct with bounded freshness.\n\n区分观察、获取及到期时间，限制新鲜度。",
       "properties": {
         "schema_version": {
           "const": 1,
@@ -1457,6 +1559,7 @@
     },
     "Relationship": {
       "additionalProperties": false,
+      "description": "Bound relationship dimensions and explicit interaction boundaries.\n\n约束关系维度及显式互动边界。",
       "properties": {
         "stage": {
           "default": "stranger",
@@ -1517,6 +1620,7 @@
     },
     "Settings": {
       "additionalProperties": false,
+      "description": "Keep explicit opt-in controls and proactive quiet/rate limits.\n\n保存显式启用开关，以及主动联系的安静时段和频率限制。",
       "properties": {
         "proactive_contact": {
           "default": false,
@@ -1601,6 +1705,7 @@
     },
     "Topic": {
       "additionalProperties": false,
+      "description": "Keep opted-in follow-up relevance and cooldown state.\n\n保存已允许跟进的话题相关性及冷却状态。",
       "properties": {
         "evidence_ids": {
           "items": {
@@ -1678,7 +1783,64 @@
     },
     "VoiceProfile": {
       "additionalProperties": false,
+      "description": "One portable voice model for conversation and professional tasks alike.\n\n闲聊与专业任务共用同一可迁移表达模型，不建立第二套任务人格。",
       "properties": {
+        "preferred_vocabulary": {
+          "items": {
+            "maxLength": 80,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 8,
+          "title": "Preferred Vocabulary",
+          "type": "array"
+        },
+        "avoided_vocabulary": {
+          "items": {
+            "maxLength": 80,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 8,
+          "title": "Avoided Vocabulary",
+          "type": "array"
+        },
+        "sentence_rhythm": {
+          "default": "natural varied rhythm",
+          "maxLength": 300,
+          "title": "Sentence Rhythm",
+          "type": "string"
+        },
+        "explanation_style": {
+          "default": "character-appropriate, clear causal reasoning",
+          "maxLength": 300,
+          "title": "Explanation Style",
+          "type": "string"
+        },
+        "analogy_style": {
+          "default": "only when useful",
+          "maxLength": 300,
+          "title": "Analogy Style",
+          "type": "string"
+        },
+        "evaluation_style": {
+          "default": "direct with factual conditions intact",
+          "maxLength": 300,
+          "title": "Evaluation Style",
+          "type": "string"
+        },
+        "disagreement_style": {
+          "default": "state the reason respectfully",
+          "maxLength": 300,
+          "title": "Disagreement Style",
+          "type": "string"
+        },
+        "question_style": {
+          "default": "ask only useful follow-up questions",
+          "maxLength": 300,
+          "title": "Question Style",
+          "type": "string"
+        },
         "verbosity_default": {
           "default": "balanced",
           "enum": [
@@ -1737,6 +1899,14 @@
           "title": "Emotional Expressiveness",
           "type": "string"
         },
+        "catchphrase_rules": {
+          "items": {
+            "$ref": "#/$defs/CatchphraseRule"
+          },
+          "maxItems": 8,
+          "title": "Catchphrase Rules",
+          "type": "array"
+        },
         "catchphrases": {
           "items": {
             "maxLength": 4000,
@@ -1766,11 +1936,38 @@
           "title": "Repetition Tolerance",
           "type": "string"
         },
-        "dialogue_examples": {
+        "preferred_patterns": {
           "items": {
-            "maxLength": 4000,
+            "maxLength": 80,
             "minLength": 1,
             "type": "string"
+          },
+          "maxItems": 8,
+          "title": "Preferred Patterns",
+          "type": "array"
+        },
+        "avoided_patterns": {
+          "items": {
+            "maxLength": 80,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 8,
+          "title": "Avoided Patterns",
+          "type": "array"
+        },
+        "dialogue_examples": {
+          "items": {
+            "anyOf": [
+              {
+                "maxLength": 4000,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "$ref": "#/$defs/DialogueExample"
+              }
+            ]
           },
           "maxItems": 10,
           "title": "Dialogue Examples",
@@ -1782,6 +1979,7 @@
     }
   },
   "additionalProperties": false,
+  "description": "Represent legacy portable character data for validated compatibility imports.\n\n表示旧可迁移角色数据，用于经验证的兼容导入。",
   "properties": {
     "schema_version": {
       "const": 2,

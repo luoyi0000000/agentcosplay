@@ -2,6 +2,7 @@
   "$defs": {
     "GrowthChange": {
       "additionalProperties": false,
+      "description": "Describe one proposed stable overlay change in an allowed character domain.\n\n描述允许角色领域中的一项稳定叠加层变化提案。",
       "properties": {
         "domain": {
           "enum": [
@@ -35,6 +36,7 @@
     }
   },
   "additionalProperties": false,
+  "description": "Track approval state without altering the character baseline.\n\n记录批准状态，不改变角色基线。",
   "properties": {
     "id": {
       "maxLength": 200,

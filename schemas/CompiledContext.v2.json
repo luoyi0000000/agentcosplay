@@ -1,5 +1,6 @@
 {
   "additionalProperties": false,
+  "description": "Bind a stable prefix to its character, versions and content digest.\n\n将稳定前缀绑定到角色、版本及正文摘要。",
   "properties": {
     "character_id": {
       "maxLength": 200,

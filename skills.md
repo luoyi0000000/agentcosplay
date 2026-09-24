@@ -18,7 +18,7 @@
 
 ## 多设备与多入口
 
-优先让一个 Hermes/AstrBot Gateway 承接多个聊天渠道，共用本机持久数据。多个 Gateway 在同一主机运行时，使用 INSTALL 中的 `connect --transport http` 配置它们连接同一 Runtime 进程。不要给不同入口安装互相独立的数据库，不通过模型名称判断是否同一人物；共用同一 Runtime、owner 和 character ID，session ID 按渠道/会话隔离。群聊须限制为同一授权用户，不能向其他用户暴露共享身份。
+优先让一个 Hermes/AstrBot Gateway 承接多个聊天渠道，共用本机持久数据。多个 Gateway 在同一主机运行时，使用 INSTALL 中的 `connect --transport http` 配置它们连接同一 Runtime 进程。不要给不同入口安装互相独立的数据库，不通过模型名称判断是否同一人物；共用同一 Runtime、owner 和 character ID，session ID 按渠道/会话隔离。多人入口必须显式验证每个 Actor 的 IdentityBinding，不能把陌生人映射到 Owner。群聊只投影 Endpoint 公开上下文，排除所有参与者的私人记忆；不同 Host 的同一真人必须经明确验证后绑定同一个 Participant。
 
 分离主机或 Docker 网络不共用 localhost。遵循高级适配文档使用用户自有 HTTPS/OAuth 服务及容器网络；本安装器不猜网络拓扑，不开放无认证公网端口，不代购云资源。
 

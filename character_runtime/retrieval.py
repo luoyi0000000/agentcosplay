@@ -1,4 +1,7 @@
-"""Deterministic local retrieval rules; scores explain ranking, never establish facts."""
+"""Deterministic local retrieval rules; scores explain ranking, never establish facts.
+
+确定性本地检索规则；分数解释排名，不能建立事实。
+"""
 
 import re
 import unicodedata
@@ -20,10 +23,20 @@ CONCEPTS = (
 
 
 def normalize(text: str) -> str:
+    """Normalize cosmetic text differences without asserting semantic equivalence.
+
+    规范表面文本差异，不声称语义等价。
+    """
+
     return " ".join(unicodedata.normalize("NFKC", text).casefold().split()).rstrip("。.!！?？")
 
 
 def tokens(text: str, *, concepts: bool = True) -> set[str]:
+    """Extract local ranking tokens; tokens do not carry authorization.
+
+    提取本地排序词元；词元不携带授权。
+    """
+
     text = normalize(text)
     # Chinese runs are segmented into overlapping bigrams without a dictionary dependency.
     result = set(WORDS.findall(CJK.sub(" ", text)))
@@ -37,7 +50,10 @@ def tokens(text: str, *, concepts: bool = True) -> set[str]:
 
 
 def duplicate(left: str, right: str) -> bool:
-    """Only cosmetic differences qualify; changed numbers, negation or word order do not."""
+    """Only cosmetic differences qualify; changed numbers, negation or word order do not.
+
+    只允许表面差异；数字、否定或语序变化不算重复。
+    """
     left, right = normalize(left), normalize(right)
     if left == right:
         return True
@@ -58,7 +74,10 @@ def score(
     unfinished_topics: tuple[str, ...] = (),
     active_goals: tuple[str, ...] = (),
 ) -> dict[str, float]:
-    """Return additive score components; their sum is the final rank."""
+    """Return additive score components; their sum is the final rank.
+
+    返回可相加的评分分量；它们之和构成最终排名。
+    """
     body = tokens(memory.content, concepts=False)
     expanded = tokens(memory.content)
 

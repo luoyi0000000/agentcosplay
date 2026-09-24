@@ -1,4 +1,7 @@
-"""One relationship authority. Absence changes warmth, never trust."""
+"""One relationship authority. Absence changes warmth, never trust.
+
+关系只有一份权威；久别影响当下亲近表达，不降低信任。
+"""
 
 from typing import TYPE_CHECKING, Any
 
@@ -10,10 +13,20 @@ if TYPE_CHECKING:
 
 
 class Relationships:
+    """Keep participant relationship authority separate from compatibility projections.
+
+    将参与者关系权威与兼容投影分开。
+    """
+
     def __init__(self, knowledge: "Knowledge") -> None:
         self.k = knowledge
 
     def get(self, cid: str) -> RelationshipState:
+        """Load canonical relationship state or initialize it from the same audience's legacy state.
+
+        读取规范关系，或从同一受众的旧状态初始化。
+        """
+
         stored = self.k.storage.get(self.k.owner, "relationship", cid)
         if stored:
             return RelationshipState.model_validate(stored)
@@ -23,6 +36,11 @@ class Relationships:
         return state
 
     def save(self, state: RelationshipState) -> None:
+        """Save the canonical relationship and update its read compatibility projection.
+
+        保存规范关系并更新兼容读取投影。
+        """
+
         self.k.storage.put(
             self.k.owner, "relationship", state.character_id, state.model_dump(mode="json")
         )
@@ -32,6 +50,11 @@ class Relationships:
         self.k.characters.save_state(legacy)
 
     def configure(self, cid: str, value: Relationship, revision: int) -> CharacterState:
+        """Apply an explicit relationship override with revision conflict detection.
+
+        执行显式关系覆盖并检测版本冲突。
+        """
+
         with self.k.storage.transaction():
             legacy = self.k.characters.state(cid)
             if legacy.revision != revision:
@@ -46,11 +69,16 @@ class Relationships:
             return legacy
 
     def effect(self, cid: str, effect: RelationshipEffect) -> None:
+        """Require independent direct-user evidence, cooldown and unused evidence for adaptation.
+
+        关系变化要求独立直接用户证据、冷却及未重复使用的证据。
+        """
+
         companion = self.k.storage.get(self.k.owner, "companion", cid) or {}
         if not companion.get("settings", {}).get("relationship_growth", True):
             raise ValueError("Automatic relationship growth is disabled")
         state = self.get(cid)
-        events = self.k.evidence(cid, effect.evidence_refs)
+        events = self.k.personal_evidence(cid, effect.evidence_refs)
         if any(e.source_kind != "USER_DIRECT" for e in events):
             raise ValueError("Relationship effects require direct user evidence")
         if len({e.timestamp.date() for e in events}) < 3:
@@ -89,6 +117,11 @@ class Relationships:
         self.save(state)
 
     def projection(self, cid: str) -> dict[str, Any]:
+        """Project bounded relational cues; absence does not rewrite learned trust.
+
+        投影有界关系线索；久别不改写已形成的信任。
+        """
+
         state = self.get(cid)
         days = (
             (self.k.clock() - state.last_interaction).total_seconds() / 86400

@@ -1,5 +1,6 @@
 {
   "additionalProperties": false,
+  "description": "Opt into simulated bodily axes; human physiology is never assumed by default.\n\n显式开启模拟身体维度，不默认假定人类生理需求。",
   "properties": {
     "enabled": {
       "default": false,

@@ -1,4 +1,7 @@
-"""Deterministic persistence gate. Host proposals cannot opt out of credential rejection."""
+"""Deterministic persistence gate. Host proposals cannot opt out of credential rejection.
+
+确定性的持久化门；宿主提案不能绕过凭据拒绝。
+"""
 
 import re
 
@@ -13,12 +16,19 @@ SECRETS = re.compile(
 SENSITIVE = re.compile(
     r"(?:身份证|护照|社保号|银行卡|信用卡|家庭住址|病历|诊断|passport|social security|"
     r"home address|medical record)\s*(?:[:=：]|是)|"
-    r"\b\d{3}-\d{2}-\d{4}\b|(?<!\d)\d{17}[\dXx](?!\d)",
+    # Exclude embedded identifier fragments without requiring spaces in Chinese prose.
+    # 排除标识符内部的数字片段，同时不要求中文正文在号码两侧添加空格。
+    r"\b\d{3}-\d{2}-\d{4}\b|(?<![A-Za-z0-9_])\d{17}[\dXx](?![A-Za-z0-9_])",
     re.IGNORECASE,
 )
 
 
 def check_content(content: str, *, sensitive: bool = False, confirmed: bool = False) -> None:
+    """Reject credentials regardless of confirmation; gate sensitive storage separately.
+
+    无论是否确认都拒绝凭据，敏感内容存储另设门。
+    """
+
     if SECRETS.search(content):
         raise ValueError("Credential-like content is not eligible for Runtime persistence")
     if (sensitive or SENSITIVE.search(content)) and not confirmed:

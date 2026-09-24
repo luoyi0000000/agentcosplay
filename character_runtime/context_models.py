@@ -1,4 +1,7 @@
-"""Portable contracts for bounded Host context and deterministic compilation."""
+"""Portable contracts for bounded Host context and deterministic compilation.
+
+有界宿主上下文与确定性编译的可迁移契约。
+"""
 
 import hashlib
 import json
@@ -18,20 +21,37 @@ ContextSlot = Literal[
     "life",
     "perception",
     "external_context",
+    "recent_turn_window",
+    "ambient_window",
 ]
 
 
 def canonical(value: Any) -> str:
+    """Serialize deterministic JSON and reject non-finite numbers.
+
+    序列化确定性 JSON，拒绝非有限数值。
+    """
+
     return json.dumps(
         value, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False
     )
 
 
 def fingerprint(value: str) -> str:
+    """Hash exact UTF-8 prefix bytes for cache identity, not authorization.
+
+    对前缀 UTF-8 字节求摘要，用于缓存标识，不用于授权。
+    """
+
     return hashlib.sha256(value.encode("utf-8")).hexdigest()
 
 
 class ContextFragment(Model):
+    """Carry authority, sensitivity and budget metadata for one whole context fragment.
+
+    携带一个完整上下文片段的权威、敏感性与预算元数据。
+    """
+
     domain: ContextSlot
     authority: Literal[
         "USER_EXPLICIT",
@@ -53,6 +73,11 @@ class ContextFragment(Model):
     @model_validator(mode="after")
     def measured(self) -> Self:
         # Costs are recomputed from validated JSON, never trusted from a producer.
+        """Recompute cost from validated payload and exclude dynamic stable-prefix content.
+
+        从已验证载荷重算成本，禁止动态内容进入稳定前缀槽。
+        """
+
         object.__setattr__(self, "budget_cost", len(canonical(self.payload)))
         if self.domain == "stable_character" and self.stability not in ("STATIC", "SEMI_STABLE"):
             raise ValueError("Dynamic state cannot enter the stable character slot")
@@ -60,21 +85,31 @@ class ContextFragment(Model):
 
 
 class ContextBudget(Model):
-    """Character caps are authoritative; token counts are diagnostic estimates only."""
+    """Character caps are authoritative; token counts are diagnostic estimates only.
+
+    字符预算是硬限制；Token 数仅作诊断估计。
+    """
 
     stable_character: int = Field(default=16000, ge=0, le=65536)
     relationship: int = Field(default=1800, ge=0, le=65536)
-    state: int = Field(default=2200, ge=0, le=65536)
+    state: int = Field(default=4000, ge=0, le=65536)
     memory: int = Field(default=7200, ge=0, le=65536)
     goals: int = Field(default=2200, ge=0, le=65536)
     open_loops: int = Field(default=2200, ge=0, le=65536)
     life: int = Field(default=2200, ge=0, le=65536)
     perception: int = Field(default=1600, ge=0, le=65536)
     external_context: int = Field(default=2400, ge=0, le=65536)
+    recent_turn_window: int = Field(default=4800, ge=0, le=65536)
+    ambient_window: int = Field(default=2400, ge=0, le=65536)
     total_chars: int = Field(default=36000, ge=0, le=131072)
 
 
 class CompiledContext(Model):
+    """Bind a stable prefix to its character, versions and content digest.
+
+    将稳定前缀绑定到角色、版本及正文摘要。
+    """
+
     character_id: Identifier
     character_version: int = Field(ge=1)
     growth_version: Identifier
@@ -85,6 +120,11 @@ class CompiledContext(Model):
 
     @model_validator(mode="after")
     def intact(self) -> Self:
+        """Reject corrupt or noncanonical prefixes before they can replace a valid compile.
+
+        拒绝损坏或非规范前缀，避免替换有效编译结果。
+        """
+
         if fingerprint(self.content) != self.fingerprint:
             raise ValueError("Compiled character fingerprint mismatch")
         payload = json.loads(self.content)

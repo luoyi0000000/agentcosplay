@@ -1,5 +1,6 @@
 {
   "additionalProperties": false,
+  "description": "Record validity and provenance for a scoped fact, independent of retrieval score.\n\n记录作用域事实的有效性及来源，不依赖检索分数。",
   "properties": {
     "id": {
       "maxLength": 200,

@@ -1,4 +1,7 @@
-"""One authority for stable prefixes and whole, bounded runtime fragments."""
+"""One authority for stable prefixes and whole, bounded runtime fragments.
+
+稳定前缀及完整有界上下文片段的唯一组装权威。
+"""
 
 from collections.abc import Iterable
 from typing import Any, get_args
@@ -18,6 +21,11 @@ SLOTS: tuple[ContextSlot, ...] = get_args(ContextSlot)
 
 
 class ContextAssembler:
+    """Select whole authorized fragments within slot and total budgets.
+
+    在分槽和总预算内选择完整的已授权片段。
+    """
+
     def __init__(self, budget: ContextBudget | None = None) -> None:
         self.budget = ContextBudget.model_validate((budget or ContextBudget()).model_dump())
 
@@ -25,6 +33,11 @@ class ContextAssembler:
         self, compiled: CompiledContext, fragments: Iterable[ContextFragment]
     ) -> dict[str, Any]:
         # Revalidate mutable producer objects, including costs and fingerprints.
+        """Build stable and volatile projections without slicing protected payloads.
+
+        组装稳定与动态投影，不切开受保护的载荷。
+        """
+
         compiled = CompiledContext.model_validate(compiled.model_dump(mode="json"))
         candidates = [ContextFragment.model_validate(f.model_dump(mode="json")) for f in fragments]
         if any(f.domain == "stable_character" for f in candidates):
@@ -117,7 +130,10 @@ def project_context(
     compiled: CompiledContext | None = None,
     budget: ContextBudget | None = None,
 ) -> dict[str, Any]:
-    """Adapt legacy runtime records to fragments; never return their unbounded mirrors."""
+    """Adapt legacy runtime records to fragments; never return their unbounded mirrors.
+
+    把旧 Runtime 记录转换为片段，不返回无界原始镜像。
+    """
     definition = result["definition"]
     compiled = compiled or compile_definition(definition)
     if compiled.character_id != definition["id"]:
@@ -172,6 +188,8 @@ def project_context(
             "created_at",
             "evidence_refs",
             "legacy_unverified",
+            "use_decision",
+            "tone_guidance",
         )
         projected = {key: memory[key] for key in fields if key in memory}
         relevance = sum(word in str(memory.get("content", "")).casefold() for word in words)
@@ -193,6 +211,18 @@ def project_context(
         )
     if result.get("expression_policy"):
         add("state", {"expression_policy": result["expression_policy"]}, 95, "ADMIN_CONFIG")
+    if result.get("derived_turn_signals"):
+        add("state", {"derived_turn_signals": result["derived_turn_signals"]}, 85, "HOST_OBSERVED")
+    for slot in ("recent_turn_window", "ambient_window"):
+        for index, event in enumerate(reversed(result.get(slot, []))):
+            add(slot, event, max(50, 79 - index), "HOST_OBSERVED")
+    if result.get("participant_adaptation"):
+        add(
+            "state",
+            {"participant_adaptation": result["participant_adaptation"]},
+            80,
+            "MODEL_DERIVED",
+        )
     for observation in result.get("perception", []):
         add("perception", observation, 65, "HOST_OBSERVED")
     if result.get("interaction"):
@@ -200,9 +230,17 @@ def project_context(
     companion = result.get("companion") or {}
     if companion.get("character_id", compiled.character_id) != compiled.character_id:
         raise ValueError("Companion context belongs to another character")
-    for key in ("affect", "embodiment", "settings", "attention", "expression_policy"):
+    for key in (
+        "affect",
+        "character_affect",
+        "relational_affect",
+        "embodiment",
+        "settings",
+        "attention",
+        "expression_policy",
+    ):
         if key in companion:
-            add("state", {key: companion[key]}, 75 if key == "mood" else 55)
+            add("state", {key: companion[key]}, 55)
     companion_slots: tuple[tuple[str, ContextSlot], ...] = (
         ("goals", "goals"),
         ("unfinished_topics", "open_loops"),
@@ -216,6 +254,15 @@ def project_context(
     for key, observation in companion.get("environment", {}).items():
         add("external_context", {key: observation}, 45)
     assembled = ContextAssembler(budget).assemble(compiled, fragments)
+    if result.get("expression_policy") and not any(
+        "expression_policy" in f["payload"] for f in assembled["temporary"].get("state", [])
+    ):
+        # Never generate with silently discarded format/correctness constraints.
+        # 格式或正确性约束不能被预算静默丢弃后继续生成。
+        raise ValueError("Context budget cannot hold the required expression contract")
+    assembled["context_diagnostics"]["memory_use_decisions"] = result.get(
+        "memory_use_decisions", []
+    )
     for key in ("session_id", "ooc", "effective_mode"):
         if key in result:
             assembled[key] = result[key]

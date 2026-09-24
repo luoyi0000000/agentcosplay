@@ -2,6 +2,7 @@
   "$defs": {
     "AffectState": {
       "additionalProperties": false,
+      "description": "The only current emotional authority within its authorized scope.\n\n已授权作用域内唯一的当前情绪权威；旧 Mood 不能覆盖它。",
       "properties": {
         "valence": {
           "default": 0,
@@ -75,6 +76,7 @@
     }
   },
   "additionalProperties": false,
+  "description": "Keep canonical AffectState and optional simulated bodily axes for one scoped character.\n\n保存当前作用域角色的规范 AffectState 与可选模拟身体维度。",
   "properties": {
     "character_id": {
       "maxLength": 200,

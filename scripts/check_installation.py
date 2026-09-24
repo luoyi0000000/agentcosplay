@@ -6,6 +6,7 @@ No existing host configuration is touched. All character content is synthetic.
 
 import asyncio
 import json
+import os
 import shutil
 import socket
 import subprocess
@@ -26,10 +27,127 @@ from character_runtime.health import call, remember
 SOURCE = Path(__file__).resolve().parents[1]
 
 
+def check_pipe_encoding() -> None:
+    """Exercise real JSON entry points through a Windows-style legacy pipe.
+
+    用 Windows 旧编码管道执行真实 JSON 入口，检查中文路径和配置不会丢失。
+    """
+    with tempfile.TemporaryDirectory(prefix="agentcosplay 中文 encoding ") as directory:
+        env = {
+            **os.environ,
+            "PYTHONIOENCODING": "cp1252",
+            "PYTHONUTF8": "0",
+            "CHARACTER_DATA_DIR": directory,
+            "CHARACTER_OWNER": "encoding-check",
+        }
+        result = subprocess.run(
+            [sys.executable, "-m", "character_runtime", "doctor"],
+            cwd=SOURCE,
+            env=env,
+            capture_output=True,
+            timeout=60,
+        )
+        assert result.returncode == 0, "Doctor cannot emit Unicode paths through a legacy pipe"
+        report = json.loads(result.stdout.decode("ascii"))
+        assert report["ok"] and report["data_dir"] == str(Path(directory).resolve())
+        for host in ("codex", "hermes", "astrbot"):
+            request = {
+                "host": host,
+                "text": "",
+                "server": {"command": sys.executable, "args": [directory, "中文配置"]},
+            }
+            result = subprocess.run(
+                [sys.executable, "-m", "character_runtime.host_config"],
+                cwd=SOURCE,
+                env=env,
+                input=json.dumps(request).encode("ascii"),
+                capture_output=True,
+                timeout=30,
+            )
+            assert result.returncode == 0, f"{host} config cannot use a legacy pipe"
+            text = json.loads(result.stdout.decode("ascii"))["text"]
+            if host == "codex":
+                import tomllib
+
+                config = tomllib.loads(text)
+            elif host == "hermes":
+                config = yaml.safe_load(text)
+            else:
+                config = json.loads(text)
+            key = "mcpServers" if host == "astrbot" else "mcp_servers"
+            assert config[key]["agentcosplay"] == request["server"]
+    print("PASS legacy-pipe-unicode", flush=True)
+
+
+def check_failure_privacy() -> None:
+    """Keep raw dependency stderr private even when its encoding is invalid.
+
+    依赖错误输出即使含非法编码，也不得泄露到安装器的错误信息中。
+    """
+    import install
+
+    try:
+        install.run(
+            [
+                sys.executable,
+                "-c",
+                "import sys; sys.stderr.buffer.write("
+                "b'UnicodeEncodeError: https://user:synthetic-secret@example.invalid/\\xff'); "
+                "sys.exit(7)",
+            ]
+        )
+    except RuntimeError as error:
+        message = str(error)
+        assert "exit 7" in message
+        assert "synthetic-secret" not in message and "example.invalid" not in message
+    else:
+        raise AssertionError("Failed subprocess reported success")
+    print("PASS failure-privacy", flush=True)
+
+
+def check_interrupted_install() -> None:
+    """Recover a killed config transaction, but never overwrite a later user edit.
+
+    恢复被强制中断的配置事务，同时拒绝覆盖中断后用户自行修改的文件。
+    """
+    import install
+
+    with tempfile.TemporaryDirectory(prefix="agentcosplay interruption ") as directory:
+        root = Path(directory)
+        config = root / "配置.json"
+        original = '{"label":"保留中文"}'.encode()
+        config.write_bytes(original)
+        probe = (
+            "import os,sys; from pathlib import Path; import install; "
+            "root=Path(sys.argv[1]); "
+            "tx=install.Transaction(root); "
+            "tx.write(root / '配置.json', b'partial'); os._exit(9)"
+        )
+        for user_edit in (False, True):
+            result = subprocess.run([sys.executable, "-c", probe, str(root)], cwd=SOURCE)
+            assert result.returncode == 9 and (root / "pending.json").exists()
+            if user_edit:
+                config.write_bytes(b"user-edit")
+                try:
+                    install.recover(root)
+                except ValueError:
+                    assert config.read_bytes() == b"user-edit"
+                    assert (root / "pending.json").exists()
+                else:
+                    raise AssertionError("Recovery overwrote an unrelated user edit")
+            else:
+                install.recover(root)
+                assert config.read_bytes() == original
+                assert not (root / "pending.json").exists()
+    print("PASS interrupted-install-recovery", flush=True)
+
+
 async def stdio(root: Path, character: str | None = None) -> str:
     import tomllib
 
-    config = tomllib.loads((root / "codex/config.toml").read_text())["mcp_servers"]["agentcosplay"]
+    config = tomllib.loads((root / "codex/config.toml").read_text(encoding="utf-8"))["mcp_servers"][
+        "agentcosplay"
+    ]
     async with Client(StdioServerParameters(**config)) as client:
         if character is None:
             character = (
@@ -58,8 +176,12 @@ async def stdio(root: Path, character: str | None = None) -> str:
 
 async def shared(root: Path, character: str) -> None:
     configs = [
-        yaml.safe_load((root / "hermes/config.yaml").read_text())["mcp_servers"]["agentcosplay"],
-        json.loads((root / "astrbot/mcp_server.json").read_text())["mcpServers"]["agentcosplay"],
+        yaml.safe_load((root / "hermes/config.yaml").read_text(encoding="utf-8"))["mcp_servers"][
+            "agentcosplay"
+        ],
+        json.loads((root / "astrbot/mcp_server.json").read_text(encoding="utf-8"))["mcpServers"][
+            "agentcosplay"
+        ],
     ]
     assert configs[0]["url"] == configs[1]["url"]
     assert configs[1]["transport"] == "streamable_http"
@@ -88,6 +210,9 @@ async def shared(root: Path, character: str) -> None:
 
 
 def main() -> None:
+    check_pipe_encoding()
+    check_failure_privacy()
+    check_interrupted_install()
     with tempfile.TemporaryDirectory(prefix="agentcosplay 中文 acceptance ") as directory:
         root = Path(directory).resolve()
         checkout = root / "checkout"
@@ -115,6 +240,8 @@ def main() -> None:
                 [sys.executable, str(checkout / "install.py"), *args, "--install-root", str(app)],
                 capture_output=True,
                 text=True,
+                encoding="ascii",
+                env={**os.environ, "PYTHONIOENCODING": "cp1252", "PYTHONUTF8": "0"},
                 timeout=600,
             )
             if result.returncode:
@@ -167,13 +294,52 @@ def main() -> None:
         finally:
             process.terminate()
             process.wait(timeout=10)
-        first = json.loads((app / "installed.json").read_text())["active"]
+        command(
+            "connect",
+            "--host",
+            "hermes",
+            "--host-dir",
+            str(root / "hermes"),
+            "--transport",
+            "http",
+            "--port",
+            str(port),
+            "--native-hermes",
+        )
+        from character_runtime.auth import LocalTokenVerifier
+
+        config = yaml.safe_load((root / "hermes/config.yaml").read_text(encoding="utf-8"))
+        expected_discovery = LocalTokenVerifier(
+            (app / "http-token").read_text().strip(), "synthetic", "http://localhost/mcp"
+        ).discovery_token
+        assert config["mcp_servers"]["agentcosplay"]["headers"]["Authorization"] == (
+            "Bearer " + expected_discovery
+        )
+        print("PASS native Hermes discovery-only configuration", flush=True)
+        command(
+            "connect",
+            "--host",
+            "astrbot",
+            "--host-dir",
+            str(root / "astrbot"),
+            "--transport",
+            "http",
+            "--port",
+            str(port),
+            "--native-astrbot",
+        )
+        native_astrbot = json.loads((root / "astrbot/mcp_server.json").read_text(encoding="utf-8"))
+        assert native_astrbot["mcpServers"]["agentcosplay"]["headers"]["Authorization"] == (
+            "Bearer " + expected_discovery
+        )
+        print("PASS native AstrBot discovery-only configuration", flush=True)
+        first = json.loads((app / "installed.json").read_text(encoding="utf-8"))["active"]
         command("update", "--host", "generic")
-        assert json.loads((app / "installed.json").read_text())["active"] != first
+        assert json.loads((app / "installed.json").read_text(encoding="utf-8"))["active"] != first
         command("doctor")
         asyncio.run(stdio(root, character))
         command("rollback")
-        assert json.loads((app / "installed.json").read_text())["active"] == first
+        assert json.loads((app / "installed.json").read_text(encoding="utf-8"))["active"] == first
         asyncio.run(stdio(root, character))
         before = (data / "runtime.sqlite3").read_bytes()
         command("uninstall")

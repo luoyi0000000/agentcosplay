@@ -1,4 +1,7 @@
-"""Transactional SQLite storage for JSON-shaped runtime records."""
+"""Transactional SQLite storage for JSON-shaped runtime records.
+
+事务化 SQLite 记录存储；检索通道在排序和数量截断前校验记忆受众。
+"""
 
 from __future__ import annotations
 
@@ -18,20 +21,83 @@ from uuid import uuid4
 
 from pydantic import ValidationError
 
-from .models import CharacterState, Memory
+from .models import CharacterState, Memory, MemoryScope
 from .retrieval import normalize, tokens
 
 
+def memory_scope_sql(
+    alias: str, owner: str, scope: MemoryScope | None
+) -> tuple[str, tuple[Any, ...]]:
+    """Apply audience authorization before every retrieval lane and LIMIT.
+
+    在所有检索通道与 LIMIT 前检查受众；旧记录只属于 Owner，群聊只读 Endpoint。
+    The alias comes only from internal constant call sites, never from user input.
+    alias 仅来自内部固定调用点，不能接受用户输入。
+    """
+    if alias not in {"m", "i"}:
+        raise ValueError("Unknown memory index alias")
+    scope = (
+        MemoryScope.model_validate(scope.model_dump())
+        if scope
+        else MemoryScope(kind="PARTICIPANT_CHARACTER", participant_id=owner)
+    )
+    field = "participant_id" if scope.kind == "PARTICIPANT_CHARACTER" else "endpoint_id"
+    target = scope.participant_id or scope.endpoint_id
+    public_only = (
+        " AND json_extract(sr.value,'$.sensitivity')='public' "
+        "AND json_extract(sr.value,'$.kind') NOT IN ('real_user','relationship')"
+        if scope.kind == "ENDPOINT_CHARACTER"
+        else ""
+    )
+    return (
+        "EXISTS (SELECT 1 FROM records sr WHERE sr.collection='memory' "
+        f"AND sr.owner={alias}.owner AND sr.key={alias}.key AND "
+        "COALESCE(json_extract(sr.value,'$.record_scope.kind'),'PARTICIPANT_CHARACTER')=? "
+        f"AND COALESCE(json_extract(sr.value,'$.record_scope.{field}'),sr.owner)=?{public_only})",
+        (scope.kind, target),
+    )
+
+
 class Storage(Protocol):
-    def transaction(self) -> AbstractContextManager[None]: ...
+    """Require owner-keyed persistence and scoped retrieval before ranking or limits.
 
-    def get(self, owner: str, collection: str, key: str) -> dict[str, Any] | None: ...
+    要求按 Owner 持久化；检索必须在排序和限额前约束作用域。
+    """
 
-    def put(self, owner: str, collection: str, key: str, value: dict[str, Any]) -> None: ...
+    def transaction(self) -> AbstractContextManager[None]:
+        """Commit as a unit or roll back, preserving nested transaction semantics.
 
-    def list(self, owner: str, collection: str) -> builtins.list[dict[str, Any]]: ...
+        作为一个单元提交或回滚，保留嵌套事务语义。
+        """
+        ...
 
-    def delete(self, owner: str, collection: str, key: str) -> None: ...
+    def get(self, owner: str, collection: str, key: str) -> dict[str, Any] | None:
+        """Read one owner-keyed record; turn-level authorization belongs to ScopedStorage.
+
+        读取一个 Owner 记录；回合权限由 ScopedStorage 约束。
+        """
+        ...
+
+    def put(self, owner: str, collection: str, key: str, value: dict[str, Any]) -> None:
+        """Persist an owner-keyed record within the caller's transaction boundary.
+
+        在调用方事务边界内保存 Owner 记录。
+        """
+        ...
+
+    def list(self, owner: str, collection: str) -> builtins.list[dict[str, Any]]:
+        """List one owner's collection; callers must retain character and audience boundaries.
+
+        列出 Owner 的集合；调用方仍须保持角色与受众边界。
+        """
+        ...
+
+    def delete(self, owner: str, collection: str, key: str) -> None:
+        """Delete only the addressed owner record, never another namespace.
+
+        仅删除指定 Owner 的记录，不越过命名空间。
+        """
+        ...
 
     def memory_window(
         self,
@@ -46,7 +112,13 @@ class Storage(Protocol):
         semantic_key: str | None,
         kind: str | None,
         limit: int,
-    ) -> builtins.list[dict[str, Any]]: ...
+        scope: MemoryScope | None = None,
+    ) -> builtins.list[dict[str, Any]]:
+        """Select time-bounded memories after applying audience scope in SQL.
+
+        先在 SQL 中应用受众范围，再选择时间窗口记忆。
+        """
+        ...
 
     def memory_candidates(
         self,
@@ -59,7 +131,13 @@ class Storage(Protocol):
         at: datetime,
         include_archived: bool = False,
         limit: int = 256,
-    ) -> builtins.list[tuple[dict[str, Any], float]]: ...
+        scope: MemoryScope | None = None,
+    ) -> builtins.list[tuple[dict[str, Any], float]]:
+        """Union bounded lexical, FTS, recent and important lanes before Python scoring.
+
+        合并有界词法、全文、近期及重要性通道，再进行 Python 排序。
+        """
+        ...
 
     def memory_duplicates(
         self,
@@ -70,29 +148,58 @@ class Storage(Protocol):
         source: str,
         session_id: str | None,
         since: datetime,
-    ) -> builtins.list[dict[str, Any]]: ...
+        *,
+        scope: MemoryScope | None = None,
+    ) -> builtins.list[dict[str, Any]]:
+        """Find cosmetic duplicates only within the authorized memory audience.
+
+        只在授权受众内查找表面差异的重复记忆。
+        """
+        ...
 
     def memory_related(
         self,
         owner: str,
         character_id: str,
         memory_id: str,
-    ) -> builtins.list[dict[str, Any]]: ...
+        *,
+        scope: MemoryScope | None = None,
+    ) -> builtins.list[dict[str, Any]]:
+        """Find promotion-related records without crossing audience boundaries.
+
+        查找提升关系记录，不跨越受众边界。
+        """
+        ...
 
     def memory_stale(
         self,
         owner: str,
         character_id: str,
         before: datetime,
-    ) -> builtins.list[dict[str, Any]]: ...
+        *,
+        scope: MemoryScope | None = None,
+    ) -> builtins.list[dict[str, Any]]:
+        """Select maintenance candidates within owner, character and audience limits.
 
-    def close(self) -> None: ...
+        在 Owner、角色和受众限制内选择维护候选。
+        """
+        ...
+
+    def close(self) -> None:
+        """Release the database connection; this does not delete persistent data.
+
+        释放数据库连接，不删除持久数据。
+        """
+        ...
 
 
 class SQLiteStorage:
-    """A single-connection SQLite record store safe for shared-thread use."""
+    """A single-connection SQLite record store safe for shared-thread use.
 
-    SCHEMA_VERSION = 2
+    单连接 SQLite 记录存储，支持共享线程安全访问。
+    """
+
+    SCHEMA_VERSION = 5
 
     def __init__(self, path: Path | str) -> None:
         self._lock = threading.RLock()
@@ -123,8 +230,8 @@ class SQLiteStorage:
             version = self._connection.execute("PRAGMA user_version").fetchone()[0]
             if version > self.SCHEMA_VERSION:
                 raise RuntimeError("Database schema is newer than supported")
-            if version == 1 and str(path) != ":memory:":
-                backup = Path(f"{path}.v1-backup-{uuid4().hex}.sqlite3")
+            if 0 < version < self.SCHEMA_VERSION and str(path) != ":memory:":
+                backup = Path(f"{path}.v{version}-backup-{uuid4().hex}.sqlite3")
                 descriptor = os.open(backup, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
                 os.close(descriptor)
                 target = sqlite3.connect(backup)
@@ -182,10 +289,88 @@ class SQLiteStorage:
                         json_extract(value, '$.subject'), json_extract(value, '$.semantic_key')
                     ) WHERE collection = 'fact' AND json_extract(value, '$.validity') = 'active'"""
                 )
+                if version < 3:
+                    self._migrate_scopes(version)
+                if 0 < version < 5:
+                    self._archive_legacy_mood(version)
                 self._connection.execute(f"PRAGMA user_version = {self.SCHEMA_VERSION}")
         except BaseException:
             self._connection.close()
             raise
+
+    def _archive_legacy_mood(self, version: int) -> None:
+        """Archive exact JSON without translating labels or modifying any original row.
+
+        保留精确 JSON，不翻译标签、不修改原记录；事务失败时全部回滚。
+        """
+        for owner, collection, key, encoded in self._connection.execute(
+            "SELECT owner, collection, key, value FROM records "
+            "WHERE collection IN ('companion', 'character_companion')"
+        ).fetchall():
+            # Empty defaults created by an earlier migration are not legacy Mood history.
+            # 前序迁移新建的空默认值不是旧 Mood 历史；不要制造额外告警。
+            try:
+                original = json.loads(encoded)
+                if isinstance(original, dict) and not original.get("mood"):
+                    continue
+            except (ValueError, TypeError):
+                pass  # Preserve malformed source bytes for audit. / 损坏源数据仍原样归档。
+            archive = f"mood-v{version}:{collection}:{key}"
+            self._migration_record(owner, "migration_original", archive, {"raw_json": encoded})
+            self._migration_record(
+                owner,
+                "migration_warning",
+                archive,
+                {
+                    "collection": collection,
+                    "key": key,
+                    "reason": "Legacy Mood is read-only history; "
+                    "no Affect conversion or trust elevation",
+                },
+            )
+
+    def _migrate_scopes(self, version: int) -> None:
+        """Keep legacy state private and create empty character-level life atomically.
+
+        在同一事务内保留旧私有状态并新建空白角色公共生活；不删除未知字段、
+        不提升信任，也不把私人计划或关系历史默认为群聊可见内容。
+        """
+        from .companion_models import CompanionState
+        from .lifelike_models import LifelikeState
+
+        if version:
+            rows = self._connection.execute(
+                "SELECT owner, collection, key, value FROM records "
+                "WHERE collection IN ('companion', 'lifelike', 'state', 'relationship')"
+            ).fetchall()
+            for owner, collection, key, encoded in rows:
+                record_key = f"v{version}:{collection}:{key}"
+                self._migration_record(
+                    owner, "migration_original", record_key, {"raw_json": encoded}
+                )
+                self._migration_record(
+                    owner,
+                    "migration_warning",
+                    record_key,
+                    {
+                        "collection": collection,
+                        "key": key,
+                        "reason": "Legacy mixed state retained owner-private; "
+                        "public life starts empty",
+                    },
+                )
+        for owner, cid in self._connection.execute(
+            "SELECT owner, key FROM records WHERE collection='definition'"
+        ).fetchall():
+            # Only the stable record key is needed. Malformed definitions remain untouched.
+            # 仅使用稳定主键；旧定义的未知或损坏字段不被重写。
+            try:
+                companion = CompanionState(character_id=cid).model_dump(mode="json")
+                lifelike = LifelikeState(character_id=cid).model_dump(mode="json")
+            except ValidationError:
+                continue
+            self._migration_record(owner, "character_companion", cid, companion)
+            self._migration_record(owner, "character_lifelike", cid, lifelike)
 
     def _setup_memory_index(self, backfill: bool) -> None:
         self._connection.execute(
@@ -418,6 +603,11 @@ class SQLiteStorage:
 
     @contextmanager
     def transaction(self) -> Iterator[None]:
+        """Commit as a unit or roll back, preserving nested transaction semantics.
+
+        作为一个单元提交或回滚，保留嵌套事务语义。
+        """
+
         with self._lock:
             depth = self._transaction_depth
             savepoint = f"storage_{depth}"
@@ -443,6 +633,11 @@ class SQLiteStorage:
                 self._transaction_depth = depth
 
     def get(self, owner: str, collection: str, key: str) -> dict[str, Any] | None:
+        """Read one owner-keyed record; turn-level authorization belongs to ScopedStorage.
+
+        读取一个 Owner 记录；回合权限由 ScopedStorage 约束。
+        """
+
         self._validate(owner, collection, key)
         with self._lock:
             row = self._connection.execute(
@@ -452,6 +647,11 @@ class SQLiteStorage:
         return None if row is None else self._decode(row[0])
 
     def put(self, owner: str, collection: str, key: str, value: dict[str, Any]) -> None:
+        """Persist an owner-keyed record within the caller's transaction boundary.
+
+        在调用方事务边界内保存 Owner 记录。
+        """
+
         self._validate(owner, collection, key)
         encoded = json.dumps(value, ensure_ascii=False, separators=(",", ":"))
         with self.transaction():
@@ -466,6 +666,11 @@ class SQLiteStorage:
                 self._index_memory(owner, key, value)
 
     def list(self, owner: str, collection: str) -> builtins.list[dict[str, Any]]:
+        """List one owner's collection; callers must retain character and audience boundaries.
+
+        列出 Owner 的集合；调用方仍须保持角色与受众边界。
+        """
+
         self._validate(owner, collection)
         with self._lock:
             rows = self._connection.execute(
@@ -475,6 +680,11 @@ class SQLiteStorage:
         return [self._decode(row[0]) for row in rows]
 
     def delete(self, owner: str, collection: str, key: str) -> None:
+        """Delete only the addressed owner record, never another namespace.
+
+        仅删除指定 Owner 的记录，不越过命名空间。
+        """
+
         self._validate(owner, collection, key)
         with self.transaction():
             self._connection.execute(
@@ -497,7 +707,13 @@ class SQLiteStorage:
         semantic_key: str | None,
         kind: str | None,
         limit: int,
+        scope: MemoryScope | None = None,
     ) -> builtins.list[dict[str, Any]]:
+        """Select time-bounded memories after applying audience scope in SQL.
+
+        先在 SQL 中应用受众范围，再选择时间窗口记忆。
+        """
+
         clauses = [
             "r.owner = ?",
             "r.collection = 'memory'",
@@ -508,7 +724,9 @@ class SQLiteStorage:
         ]
         from .models import now
 
-        args: builtins.list[Any] = [owner, character_id, now().timestamp(), session_id]
+        scope_sql, scope_args = memory_scope_sql("i", owner, scope)
+        clauses.append(scope_sql)
+        args: builtins.list[Any] = [owner, character_id, now().timestamp(), session_id, *scope_args]
         event_time = (
             "julianday(COALESCE(json_extract(r.value,'$.event_at'), "
             "json_extract(r.value,'$.created_at')))"
@@ -548,8 +766,12 @@ class SQLiteStorage:
         at: datetime,
         include_archived: bool = False,
         limit: int = 256,
+        scope: MemoryScope | None = None,
     ) -> builtins.list[tuple[dict[str, Any], float]]:
-        """Union bounded lexical, FTS, recent and important lanes before Python scoring."""
+        """Union bounded lexical, FTS, recent and important lanes before Python scoring.
+
+        合并有界词法、全文、近期及重要性通道，再进行 Python 排序。
+        """
         if not 1 <= limit <= 256 or len(query) > 8000:
             raise ValueError("Memory candidates require limit 1..256 and query <=8000 characters")
         wanted = sorted(tokens(query))[:64]
@@ -560,15 +782,19 @@ class SQLiteStorage:
             "AND (m.kind != 'session' OR m.session_id = ?) "
             "AND (m.expires IS NULL OR m.expires > ?)"
         )
-        parameters = (owner, character_id, session_id, at.timestamp())
+        scope_sql, scope_args = memory_scope_sql("m", owner, scope)
+        where += " AND " + scope_sql
+        parameters = (owner, character_id, session_id, at.timestamp(), *scope_args)
         lane = max(1, limit // 4)
         ids: dict[int, float] = {}
         with self._lock:
+            # Do not use corpus-wide BM25: other private audiences must not affect ranking.
+            # 不使用全库 BM25，避免其他私有受众的数据影响本轮排序。
             if wanted and self.fts_available:
                 expression = " OR ".join('"' + term.replace('"', '""') + '"' for term in wanted)
                 rows = self._connection.execute(
                     "SELECT m.id FROM memory_fts JOIN memory_index m ON m.id = memory_fts.rowid "
-                    f"WHERE memory_fts MATCH ? AND {where} ORDER BY bm25(memory_fts), m.id LIMIT ?",
+                    f"WHERE memory_fts MATCH ? AND {where} ORDER BY m.observed DESC, m.id LIMIT ?",
                     (expression, *parameters, lane),
                 ).fetchall()
                 ids.update((row[0], 1 / (rank + 1)) for rank, row in enumerate(rows))
@@ -617,17 +843,26 @@ class SQLiteStorage:
         source: str,
         session_id: str | None,
         since: datetime,
+        *,
+        scope: MemoryScope | None = None,
     ) -> builtins.list[dict[str, Any]]:
+        """Find cosmetic duplicates only within the authorized memory audience.
+
+        只在授权受众内查找表面差异的重复记忆。
+        """
+
+        scope_sql, scope_args = memory_scope_sql("m", owner, scope)
         with self._lock:
             rows = self._connection.execute(
-                """SELECT r.value FROM memory_index m JOIN records r
+                f"""SELECT r.value FROM memory_index m JOIN records r
                 ON r.owner = m.owner AND r.collection = 'memory' AND r.key = m.key
-                WHERE m.owner = ? AND m.character_id = ? AND m.normalized = ?
+                WHERE m.owner = ? AND m.character_id = ? AND {scope_sql} AND m.normalized = ?
                 AND m.kind = ? AND m.source = ? AND m.session_id IS ? AND m.status = 'active'
                 AND m.observed >= ? ORDER BY m.observed DESC LIMIT 8""",
                 (
                     owner,
                     character_id,
+                    *scope_args,
                     normalize(content),
                     kind,
                     source,
@@ -642,13 +877,22 @@ class SQLiteStorage:
         owner: str,
         character_id: str,
         memory_id: str,
+        *,
+        scope: MemoryScope | None = None,
     ) -> builtins.list[dict[str, Any]]:
+        """Find promotion-related records without crossing audience boundaries.
+
+        查找提升关系记录，不跨越受众边界。
+        """
+
+        scope_sql, scope_args = memory_scope_sql("m", owner, scope)
         with self._lock:
             rows = self._connection.execute(
-                """SELECT r.value FROM memory_index m JOIN records r
+                f"""SELECT r.value FROM memory_index m JOIN records r
                 ON r.owner = m.owner AND r.collection = 'memory' AND r.key = m.key
-                WHERE m.owner = ? AND m.character_id = ? AND (m.key = ? OR m.promoted_from = ?)""",
-                (owner, character_id, memory_id, memory_id),
+                WHERE m.owner = ? AND m.character_id = ? AND {scope_sql}
+                AND (m.key = ? OR m.promoted_from = ?)""",
+                (owner, character_id, *scope_args, memory_id, memory_id),
             ).fetchall()
         return [self._decode(row[0]) for row in rows]
 
@@ -657,20 +901,33 @@ class SQLiteStorage:
         owner: str,
         character_id: str,
         before: datetime,
+        *,
+        scope: MemoryScope | None = None,
     ) -> builtins.list[dict[str, Any]]:
+        """Select maintenance candidates within owner, character and audience limits.
+
+        在 Owner、角色和受众限制内选择维护候选。
+        """
+
+        scope_sql, scope_args = memory_scope_sql("m", owner, scope)
         with self._lock:
             rows = self._connection.execute(
-                """SELECT r.value FROM memory_index m JOIN records r
+                f"""SELECT r.value FROM memory_index m JOIN records r
                 ON r.owner = m.owner AND r.collection = 'memory' AND r.key = m.key
-                WHERE m.owner = ? AND m.character_id = ? AND m.status = 'active'
+                WHERE m.owner = ? AND m.character_id = ? AND {scope_sql} AND m.status = 'active'
                 AND m.kind = 'character_long_term' AND m.importance < 0.7 AND m.observed < ?
                 AND m.source IN ('conversation', 'model', 'inferred', 'simulated_life')
                 ORDER BY m.observed LIMIT 100""",
-                (owner, character_id, before.timestamp()),
+                (owner, character_id, *scope_args, before.timestamp()),
             ).fetchall()
         return [self._decode(row[0]) for row in rows]
 
     def close(self) -> None:
+        """Release the database connection; this does not delete persistent data.
+
+        释放数据库连接，不删除持久数据。
+        """
+
         with self._lock:
             self._connection.close()
 

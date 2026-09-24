@@ -1,6 +1,6 @@
 # Runtime 数据契约
 
-规范来自 `character_runtime` 的 Pydantic 模型和 `schemas/`；额外字段、非有限数字及越界输入被拒绝。SQLite schema 为 2，角色包为 V3，接受旧 V1/V2 包。数据的长期命名空间为认证 owner + character，session/host/platform 只是绑定与传输。一个 session 同时只有一个活动人物。
+规范来自 `character_runtime` 的 Pydantic 模型和 `schemas/`；额外字段、非有限数字及越界输入被拒绝。SQLite schema 为 3，角色包为 V3，接受旧 V1/V2 包。长期状态按 RuntimeOwner、CharacterInstance、Participant 或 Endpoint 分隔；Session 的角色路由与逐轮 Actor 分离。一个 session 同时只有一个活动人物。
 
 ## 权威与证据
 
@@ -20,7 +20,7 @@ Durable Job 使用 pending/running/retry/failed/quarantined/committed。租约�
 
 importance、confidence、durability、activation 分开。普通低价值提案留在 RAW_ONLY；显式记住需直接用户证据，长期保留。短期 TTL、过期、归档和忘记各有含义；自动维护不会因长期未召回而删除显式记忆。检索不增加 confidence/durability。中文有本地 bigram 与词项索引，FTS5 缺失时使用本地索引；不要求向量服务。
 
-时间召回由宿主发送 RecallRequest 的 intent、起止时间或 today/yesterday/last_week 与时区，按原事件时间过滤。关键词不承担主要意图识别。EXACT_QUOTE 只返回原始证据正文；推断、旧记忆和模拟必须保留标签。项目知识独立于人物 Memory，不进入人格编译。
+时间召回由宿主发送 RecallRequest 的 intent、起止时间或 today/yesterday/last_week 与时区，按原事件时间过滤。关键词不承担主要意图识别。EXACT_QUOTE / EXACT_RECALL 直接读取可见 RawEvent 原文（包含尚未提炼为 Memory 的记录）；推断、旧记忆和模拟必须保留标签。项目知识独立于人物 Memory，不进入人格编译。
 
 ContextAssembler 是唯一投影与预算权威。稳定前缀由人物 revision、growth version、compiler version 决定，不含当前时间、天气、关系、召回结果或用户名。同版本内容字节稳定；编译失败保留同角色 Last Known Good。临时状态按 slot 预算收纳完整片段，超限省略并报告，不机械截断用户答复。context_explain 只返回统计、版本与摘要。
 
@@ -30,7 +30,7 @@ Relationship Engine 保存 anchor、learned、override、closeness、friction �
 
 成长保存 candidate/version/overlay；从不覆写基线。低影响声音变化需要至少三天直接证据；其他变化先进入待审。高影响变化必须 OOC 批准。growth_control 提供 history/preview/approve/reject/rollback，回滚产生新版本并冷却七天，保留原证据。一次“说短一点”和助手历史不能永久训练人物声音。
 
-VoiceProfile 是结构化人物表达权威。宿主通过 GenerationRequest 指定任务类型、格式和长度要求；ExpressionPolicy 优先满足正确性、用户要求、任务和平台约束，再应用声音与关系。自然中文、少套话和按性格偶尔使用语气词是生成指导，不是硬字数截断器。
+VoiceProfile 是结构化人物表达权威。宿主通过 GenerationRequest 指定任务类型、格式和长度要求；ExpressionPolicy 将内容约束与角色表达并行处理；专业任务不会自动中性化，人物表达不得损坏事实与精确载荷。自然中文、少套话和按性格偶尔使用语气词是生成指导，不是硬字数截断器。
 
 ## 身份、陪伴与媒体
 
@@ -51,3 +51,49 @@ V3 默认包不含 Memory、原始事件、真实用户资料、provider 位置�
 忘记会清除活跃库中的正文和依赖证据的派生内容，并使关联成长投影失效。已导出的文件、私有迁移备份、宿主历史和介质历史页需分别管理；不能声称物理不可恢复。数据库不做应用层加密，部署应使用私有账户、磁盘权限和受控备份。
 
 P3 的向量/embedding、外部 Memory backend、视觉向量库和管理 UI 都是可选扩展，未作为当前依赖。
+
+## Scoped host ingress / 宿主权限入口
+
+RuntimeOwner manages the namespace; Participant identifies a verified human. IdentityBinding maps an actor, PlatformBinding selects the endpoint, CharacterRoute authorizes the instance, and DeliveryBinding grants one host permission to send. Shared instances share definition and approved Growth, never personal context. Private instances use distinct character IDs in the same Runtime engine and SQLite.
+
+RuntimeOwner 管理命名空间；Participant 标识显式验证过的真人。IdentityBinding 确定“谁”，PlatformBinding 确定“哪里”，CharacterRoute 确定角色实例，DeliveryBinding 确定唯一发送者。共享实例只共享定义与已批准成长；私人实例使用不同角色 ID，仍共用同一引擎与 SQLite。
+
+A trusted owner/host bridge configures `identity_control`, `endpoint_bind`, `character_route_bind` and `delivery_bind`. It opens an interaction with `host_turn_open` and a stable `request_id`. Retry reuses the turn and rechecks revocation. Authenticated HTTP ingress returns a short-lived capability for the model's existing MCP tools. The owner credential must remain in trusted host code. A scoped capability cannot ingest evidence, manage bindings, authorize global Growth, or acknowledge delivery; it expires after one hour and after server restart.
+
+可信管理/宿主入口配置身份、地点、路由与投递绑定，再用稳定 request_id 打开 Turn；重试复用原 Turn 并复查撤销。HTTP 入口为模型现有 MCP 工具签发短期能力令牌，Owner 凭据必须留在可信宿主代码中。单轮令牌不能伪造证据、管理绑定、授权全局成长或确认发送，一小时后或服务重启后失效。
+
+Group storage denies every Participant-private collection before reading, including the current actor's state, Relationship, Adaptation and Relational Affect. Operation audit snapshots respect the same boundary. Only endpoint public context and character public life can enter group generation. Personal preferences change the temporary projection, never the stable prefix or global Growth. Conversation task/OOC modes survive subsequent turns without pinning the conversation to a human.
+
+群聊在存储读取前拒绝所有 Participant 私有数据，包括当前 Actor 的状态、关系、适应和关系情绪；操作审计快照也遵守该边界。群聊生成只使用 Endpoint 公开上下文与角色公共生活。个人偏好只改变临时投影，不改变稳定前缀或全局成长；会话任务/OOC 模式跨轮次保留，但不把会话绑定到某个人。
+
+Schema 3 migration privately backs up the database, preserves legacy mixed state and unknown fields byte-for-byte, and initializes separate public life with safe defaults. A failure rolls back all migration writes. There is no automatic private-to-public promotion. `host_companion_configure` is owner-only; group OOC cannot enable endpoint proactive policy. Scoped proactive send and ACK update the existing proactive engine and the endpoint delivery ledger in one transaction. Unknown results block authority handover and resend.
+
+Schema 3 迁移先生成私有备份，原样保留旧混合状态及未知字段，再以安全默认值初始化公共生活；失败完整回滚，不自动把私人内容公开。host_companion_configure 仅供 Owner 使用，群聊 OOC 不授予 Endpoint 主动联系配置权。带 Turn 的主动发送与 ACK 在同一事务中更新既有主动引擎和 Endpoint 投递账本；未知结果禁止切换 Host 或重发。
+
+## MemoryUsePolicy / 逐条记忆使用决策
+
+Scope authorization precedes every candidate lane and ranking. Each allowed Memory then receives an ephemeral `MemoryUseDecision` with ALLOW/DENY, policy, reasons, evaluation time and policy version. DENY is not INTERNAL_ONLY. Diagnostics expose decisions for authorized candidates, never another participant's private bodies or record inventory.
+
+Scope 授权先于每个候选通道及排序。每条已授权记忆再得到临时 MemoryUseDecision，包含访问结果、使用策略、原因、时间与版本。DENY 不等于 INTERNAL_ONLY；诊断不枚举其他 Participant 的私人记录。
+
+DIRECT permits evidence-backed background use, not absolute truth or verbatim quotation. Inferred/model-derived content is UNCERTAIN. Relationship cues and simulations may produce TONE_ONLY social guidance without event bodies. Expired, forgotten, superseded and normally recalled legacy records remain INTERNAL_ONLY. Explicit historical recall may expose authorized legacy records as UNCERTAIN. Unrelated sensitive memory is excluded. OOC maintenance can inspect authorized originals without turning them into generation evidence.
+
+DIRECT 允许使用有证据的背景，但不等于绝对真实或原话；推断与模型派生内容标为 UNCERTAIN。关系线索与模拟可生成 TONE_ONLY 社交约束，不输出事件正文。过期、遗忘、被替代及普通召回中的旧未验证记录为 INTERNAL_ONLY；显式历史回忆可将已授权旧记录标为 UNCERTAIN。无关敏感记忆不进入生成；OOC 维护可审阅已授权原始记录，但不把它们升级成生成证据。
+
+The decision is not written back to Memory. Exact recall reads RawEvent independently of summaries and preserves source/legacy labels. A DIRECT paraphrase cannot become a claimed user quote.
+
+决策不写回 Memory；精确回忆独立读取 RawEvent 并保留来源与旧记录标签。即使摘要为 DIRECT，也不能冒充用户原话。
+
+## Character continuity / 任务人格连续性
+
+`soft_roleplay` retains full character identity with task-appropriate restraint. All task intents use the same VoiceProfile; vocabulary, rhythm, explanations, analogies, evaluation, questions and disagreement styles are compiled into the stable prefix. Curated dialogue examples accept both legacy strings and meaning/character pairs. They are never learned from assistant history automatically. Core humor changes now require explicit Growth approval.
+
+soft_roleplay 保留完整角色身份，按任务收敛表演；所有任务共用 VoiceProfile。词汇、节奏、解释、比喻、评价、追问和分歧风格进入稳定前缀。示范兼容旧字符串及 meaning/character 对照，但不会自动从助手历史学习；核心幽默风格变化须显式批准成长。
+
+GenerationRequest separates `explicit_format` from `payload_only`. Code/JSON inside an answer permits character prose around it. Only an explicit payload-only request suppresses wrappers; `neutral_expression` and session OOC/task_neutral suppress voice without deleting the character. Catchphrase rules are optional suggestions with usage/intensity/avoid-contexts and a cooldown measured from delivered ASSISTANT_VISIBLE history in the authorized audience.
+
+GenerationRequest 将格式与 payload_only 分开；回答包含代码/JSON 时仍可有人物解释，明确要求纯载荷才禁止包装文字。neutral_expression 和 OOC/task_neutral 关闭表达，不删除角色。口头禅有场景、强度、避用条件与冷却，冷却仅根据已授权受众中实际可见的助手历史计算，绝不强制使用。
+
+ProtectedPayload marks exact code, JSON, commands, URLs, quotes, numeric data and tool output. The local validator rejects changes to declared payloads and invalid raw JSON without a repair LLM. It does not prove newly generated code or factual claims correct. Compiler version 4 keeps the new semantics separate from old cached prefixes. Context assembly fails explicitly if it cannot retain the required expression contract.
+
+ProtectedPayload 标记精确代码、JSON、命令、URL、引用、数字和工具输出。本地校验拒绝已声明载荷被改写及无效纯 JSON，不调用润色模型；它不保证新生成代码或事实结论正确。编译器版本 4 避免复用旧语义缓存；必要表达约束装不进预算时明确失败，不静默丢弃。

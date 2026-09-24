@@ -1,5 +1,6 @@
 {
   "additionalProperties": false,
+  "description": "Express recall intent and time limits; exact quotation still requires RawEvents.\n\n表达召回意图及时间范围；精确引用仍须读取 RawEvent。",
   "properties": {
     "intent": {
       "default": "GENERAL",

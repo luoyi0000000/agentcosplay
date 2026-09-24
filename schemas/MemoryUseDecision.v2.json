@@ -1,0 +1,64 @@
+{
+  "additionalProperties": false,
+  "description": "Ephemeral usage projection, never an intrinsic canonical Memory field.\n\n单轮使用投影；绝不作为规范 Memory 的固有字段持久化。",
+  "properties": {
+    "memory_id": {
+      "maxLength": 200,
+      "minLength": 1,
+      "title": "Memory Id",
+      "type": "string"
+    },
+    "access": {
+      "enum": [
+        "ALLOW",
+        "DENY"
+      ],
+      "title": "Access",
+      "type": "string"
+    },
+    "policy": {
+      "anyOf": [
+        {
+          "enum": [
+            "DIRECT",
+            "UNCERTAIN",
+            "TONE_ONLY",
+            "INTERNAL_ONLY"
+          ],
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Policy"
+    },
+    "reason_codes": {
+      "items": {
+        "type": "string"
+      },
+      "maxItems": 12,
+      "title": "Reason Codes",
+      "type": "array"
+    },
+    "evaluated_at": {
+      "format": "date-time",
+      "title": "Evaluated At",
+      "type": "string"
+    },
+    "policy_version": {
+      "const": "1",
+      "default": "1",
+      "title": "Policy Version",
+      "type": "string"
+    }
+  },
+  "required": [
+    "memory_id",
+    "access"
+  ],
+  "title": "MemoryUseDecision",
+  "type": "object",
+  "$schema": "https://json-schema.org/draft/2020-12/schema"
+}

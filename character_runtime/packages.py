@@ -1,4 +1,7 @@
-"""Versioned portable packages; no transport credentials or foreign grants survive import."""
+"""Versioned portable packages; no transport credentials or foreign grants survive import.
+
+版本化可迁移包；导入不能保留传输凭据或外部授权。
+"""
 
 import json
 from copy import deepcopy
@@ -6,7 +9,7 @@ from typing import Any, Literal, Self
 
 from pydantic import Field, model_validator
 
-from .companion_models import CompanionState, Goal, Habit, Mood, Settings, Topic
+from .companion_models import CompanionState, Goal, Habit, Settings, Topic
 from .knowledge_models import FactRecord, RawEvent
 from .lifelike_models import LifelikeState, VisualPrototype
 from .models import (
@@ -27,6 +30,11 @@ from .safety import check_content
 
 
 class PackageV2(Model):
+    """Represent legacy portable character data for validated compatibility imports.
+
+    表示旧可迁移角色数据，用于经验证的兼容导入。
+    """
+
     schema_version: Literal[2] = 2
     definition: CharacterDefinition
     state: CharacterState | None = None
@@ -36,6 +44,11 @@ class PackageV2(Model):
 
     @model_validator(mode="after")
     def coherent(self) -> Self:
+        """Reject duplicate or foreign record references inside a character package.
+
+        拒绝角色包内重复或不属于该角色的记录引用。
+        """
+
         Package.model_validate(self.model_dump(exclude={"companion", "schema_version"}))
         if self.companion and (
             not self.includes_memories or self.companion.character_id != self.definition.id
@@ -45,7 +58,10 @@ class PackageV2(Model):
 
 
 class PortableKnowledge(Model):
-    """The bounded common shape of project memories and narrative records."""
+    """The bounded common shape of project memories and narrative records.
+
+    项目记忆与叙事记录共用的有界结构。
+    """
 
     id: Identifier
     owner_id: Identifier
@@ -60,6 +76,11 @@ class PortableKnowledge(Model):
 
 
 class RuntimeSnapshot(Model):
+    """Carry portable runtime state, excluding host authority and transport bindings.
+
+    携带可迁移 Runtime 状态，不包含宿主权威或传输绑定。
+    """
+
     relationship: RelationshipState | None = None
     growth_versions: list[GrowthVersion] = Field(default_factory=list, max_length=1000)
     growth_candidates: list[GrowthCandidate] = Field(default_factory=list, max_length=1000)
@@ -69,6 +90,11 @@ class RuntimeSnapshot(Model):
 
 
 class PackageV3(Model):
+    """Carry versioned portable state without platform identities or private credentials.
+
+    携带版本化可迁移状态，不携带平台身份或私人凭据。
+    """
+
     schema_version: Literal[3] = 3
     definition: CharacterDefinition
     state: CharacterState | None = None
@@ -84,6 +110,11 @@ class PackageV3(Model):
 
     @model_validator(mode="after")
     def coherent(self) -> Self:
+        """Reject duplicate or foreign record references inside a character package.
+
+        拒绝角色包内重复或不属于该角色的记录引用。
+        """
+
         PackageV2.model_validate(
             self.model_dump(include=set(PackageV2.model_fields)) | {"schema_version": 2}
         )
@@ -133,6 +164,11 @@ class PackageV3(Model):
 def portable_companion(
     state: CompanionState, memory_ids: dict[str, str], character_id: str
 ) -> CompanionState:
+    """Remap portable references while preserving opaque Mood archives verbatim.
+
+    重映射可迁移引用，同时原样保留不透明 Mood 档案。
+    """
+
     data = state.model_dump()
     data.update(
         character_id=character_id,
@@ -150,8 +186,9 @@ def portable_companion(
         last_advanced_at=now(),
     )
     result = CompanionState.model_validate(data)
-    evidenced: list[Mood | Goal | Habit | Topic] = [
-        result.mood,
+    # Mood references are opaque archive bytes, not live evidence links to remap.
+    # Mood 的引用属于不透明档案，不再作为活跃证据映射，往返保留原值。
+    evidenced: list[Goal | Habit | Topic] = [
         *result.goals,
         *result.habits,
         *result.topics,
@@ -172,6 +209,11 @@ def export_character(
     include_companion: bool = False,
     include_private_knowledge: bool = False,
 ) -> PackageV3:
+    """Export allowed owned data only, rechecking private and credential boundaries.
+
+    只导出允许的所属数据，再次检查私人数据及凭据边界。
+    """
+
     if include_companion and not include_memories:
         raise ValueError("Companion contains private activity; explicit memory opt-in is required")
     with runtime.storage.transaction():
@@ -199,6 +241,8 @@ def export_character(
                                 "conversation_id": "",
                                 "actor_id": "",
                                 "source_ref": "",
+                                "logical_response_id": None,
+                                "segment_index": None,
                             }
                         )
                     )
@@ -239,12 +283,14 @@ def export_character(
                 m = Memory.model_validate(data)
                 if (
                     m.character_id == character_id
+                    and runtime.memory.authorized(m)
                     and m.kind != "real_user"
                     and m.status == "active"
                     and (not m.expires_at or m.expires_at > now())
                 ):
                     data = m.model_dump() | {
                         "owner": "export",
+                        "record_scope": None,
                         "session_id": None,
                         "promoted_from": None,
                         "turn_id": None,
@@ -290,7 +336,7 @@ def export_character(
                     for r in runtime.knowledge.records("visual_prototype", character_id)
                 ],
             )
-        return PackageV3(
+        package = PackageV3(
             runtime_snapshot=snapshot,
             definition=definition,
             state=state,
@@ -307,12 +353,18 @@ def export_character(
             narrative=private["narrative"],
             project_memories=private["project_memory"],
         )
+        _check_import_content(
+            package.model_dump(mode="json"), include_companion or include_private_knowledge
+        )
+        return package
 
 
 def migrate_package(data: dict[str, Any]) -> dict[str, Any]:
     """Non-destructive V1/V2→V3 conversion; the input remains an exact backup.
 
     Never rewrites a package file or an existing character/database record.
+
+        无损转换 V1/V2 到 V3；输入保持完整，可作为原始备份。
     """
     source = deepcopy(data)
     if source.get("schema_version") == 1:
@@ -331,6 +383,11 @@ def migrate_package(data: dict[str, Any]) -> dict[str, Any]:
 def import_character(
     runtime: Runtime, data: dict[str, Any], *, sensitive_confirmation: str = ""
 ) -> CharacterDefinition:
+    """Validate before transactional import; new IDs never revive foreign grants.
+
+    事务导入前完成验证；新 ID 不继承外部授权。
+    """
+
     if len(json.dumps(data, ensure_ascii=False).encode()) > 10_000_000:
         raise ValueError("Character package exceeds 10 MB")
     package = PackageV3.model_validate(migrate_package(data))
@@ -368,6 +425,7 @@ def import_character(
                 | {
                     "id": mapping[m.id],
                     "owner": runtime.owner,
+                    "record_scope": None,
                     "character_id": new_character,
                     "promoted_from": None,
                     "confirmation": "",
@@ -409,6 +467,8 @@ def import_character(
                     "conversation_id": "",
                     "actor_id": "",
                     "source_ref": "",
+                    "logical_response_id": None,
+                    "segment_index": None,
                     "received_at": now(),
                 }
             )
@@ -512,5 +572,24 @@ def _check_import_content(value: Any, confirmed: bool) -> None:
         if value.get("sensitivity") == "sensitive" and not confirmed:
             raise ValueError("Sensitive personal content requires explicit storage authorization")
         for key, item in value.items():
+            # Unknown archive fields remain opaque, but named credential fields are not portable.
+            # 未知档案字段保留原义，但明确命名的凭据字段不能借档案绕过导出安全边界。
+            if (
+                str(key).casefold().replace("-", "_").replace(" ", "_")
+                in {
+                    "api_key",
+                    "password",
+                    "passwd",
+                    "access_token",
+                    "refresh_token",
+                    "oauth_token",
+                    "authorization",
+                    "cookie",
+                    "client_secret",
+                    "private_key",
+                }
+                and item
+            ):
+                raise ValueError("Credential fields are not eligible for character packages")
             _check_import_content(key, confirmed)
             _check_import_content(item, confirmed)

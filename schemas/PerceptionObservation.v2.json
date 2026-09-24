@@ -1,5 +1,6 @@
 {
   "additionalProperties": false,
+  "description": "Keep bounded media perception with source evidence and expiration.\n\n保存带来源证据及有效期的有界媒体感知。",
   "properties": {
     "id": {
       "maxLength": 200,

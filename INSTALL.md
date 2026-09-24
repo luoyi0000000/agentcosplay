@@ -45,7 +45,7 @@ AstrBot 的目录必须从实际部署配置取得，不能直接照抄示例。
 
 可用 `--install-root /绝对程序目录 --data-dir /绝对人物目录` 自定义；后续命令须使用同一个 `--install-root`。安装器拒绝目录重叠、Git 内的人物数据和可能携带凭据的宿主配置。删除下载的源码不会删除已安装程序或人物数据。
 
-`--owner` 默认 `local-user`。它是单用户本地身份，不是登录系统。更新不能暗中更换身份或数据路径。多人机器人不能把不同人的会话全部映射到此身份；使用宿主权限限制为同一授权用户，或配置高级 OAuth 身份隔离。
+`--owner` 默认 `local-user`。它标识 Runtime 的管理与数据命名空间，不是当前发言人或登录系统。单用户默认 Participant 等于 Owner；多人入口必须使用可信、显式 IdentityBinding 逐轮解析 Participant，群聊上下文只读取该 Endpoint 的公开记录，不读取任何参与者的私人记忆。更新不能暗中更换身份或数据路径。
 
 旧版直接启动产生的 `./data` **不会自动迁移或删除**。先停止旧进程，用角色导出/导入迁移；完整机器备份可在停止所有连接后备份整个数据库目录。不要只复制正在写入的 SQLite 主文件而漏掉 WAL。
 
@@ -69,7 +69,38 @@ python3 install.py run --transport http
 
 安装器自动生成本机专用随机 token，私密保存并写入对应宿主请求头，终端不会显示 token。默认 `127.0.0.1:8765/mcp`；首次 connect 可用 `--port` 选择其他非特权端口，后续入口须使用相同端口。更新会保留端口和身份。不要提交 host 配置、`http-token`、`installed.json` 或 `backups/` 到 Git。
 
-两个入口选择相同 **character ID / owner**，各自使用不同 session ID，才是同一人物的连续互动。进程重启后状态从同一 SQLite 恢复。不要在另一个目录安装第二份 Runtime 来代替共享。
+### Hermes 官方钩子接入（管理员 / 安装 Agent）
+
+现有单用户 MCP 安装方式保持不变。需要自动角色上下文时，先停止 Hermes，在同一已安装 Runtime 上执行 `python3 install.py connect --host hermes --transport http --native-hermes`。这会将该宿主 MCP 配置切换为仅发现凭据；实际工具权限由每轮已验证身份决定。继续按上文启动共享 HTTP Runtime。
+
+使用 Hermes 官方 `hermes plugins install luoyi0000000/agentcosplay` 安装此仓库的 `plugin.yaml` / `__init__.py` 入口。Hermes 环境需启用其官方 MCP 依赖，不要把 Runtime 的整套锁定依赖强行安装进 Hermes 环境。
+
+在当前 `HERMES_HOME/config.yaml` 的 `plugins.entries.agentcosplay.settings` 中配置以下字段。安装 Agent 从实际 Host 元数据和 Runtime 的 `identity_control` / `endpoint_bind` 结果填写，不能根据昵称猜测 Actor、合并身份或将群映射到私聊：
+
+| 字段 | 内容 |
+|---|---|
+| `runtime_url` | 同一个共享 Runtime 的 HTTP MCP 地址 |
+| `token_file` | Runtime 安装目录内 `http-token` 的绝对路径；不复制密钥进提示词 |
+| `host_id` | 已验证 IdentityBinding 使用的稳定 Host ID，默认 `hermes` |
+| `routes` | 路由列表；每项包含下述字段 |
+| `routes[].platform / chat_id / thread_id / chat_type` | Hermes 实际平台、会话、线程 ID 和类型；无线程填空字符串 |
+| `routes[].runtime_platform` | 明确包含账号/应用命名空间的 Runtime 平台 ID |
+| `routes[].endpoint_id` | `endpoint_bind` 返回的绑定 ID，不是直接填写聊天 ID |
+| `routes[].kind` | `dm` 对应 Hermes `dm`；`group/channel/thread` 必须对应 `group` |
+
+原生入口只匹配已配置 Gateway 路由，未知 Actor、缺少稳定元数据的 CLI 对话与子 Agent 不继承 Owner 权限。需要 CLI 单用户使用时保留原有 MCP 入口。配置后重载 Hermes；检查上下文投影和受限工具调用。插件停用后发现凭据不能执行工具，这是权限边界；恢复单用户模式需 Owner 显式重新 `connect`，不带 `--native-hermes`。
+
+当前官方钩子没有最终发送回执，因此此接入不记录自动回复为已送达，也不驱动分段/主动发送；同一 Endpoint 不要启用两个宿主自动回复。详见 [宿主契约与限制](docs/adapters.md)。原生钩子目前通过本地契约与 Runtime/MCP 验证，真实 Hermes 平台验收仍待补验。
+
+## AstrBot 原生桥接
+
+AstrBot 插件页面可用同一仓库地址安装原生入口。它连接已安装的共享 Runtime，不在 AstrBot 内创建第二个数据库或模型。先由安装 Agent 完成本页的 Runtime 安装及可信身份、Endpoint 绑定，再运行 `connect --host astrbot --host-dir <实际持久数据目录> --transport http --native-astrbot`。这个参数使用发现凭据；Owner 凭据只交给可信插件代码。
+
+插件配置填写 `runtime_url`、Runtime 的 `http-token` 绝对文件路径 `token_file`、已绑定的 `host_id` 和 `routes_json`。每条路由包含 AstrBot 官方 `platform_id`、`session_id`、`kind`（`dm` 或 `group`）、Runtime `runtime_platform` 和已验证 `endpoint_id`。只能从真实宿主及 Runtime 绑定取得这些值，不通过昵称猜测。配置不含模型密钥，也不上传凭据文件。
+
+原生钩子自动准备上下文并观察生成；原始任务和 Host 历史保持独立。它使用 AstrBot 已有的 MCP 1.x，不把 Runtime 的 MCP 2.x 依赖装入宿主。canonical Skill 由同一个安装器附带安装。AstrBot 通用发送后钩子不能证明发送成功，因此当前声明无可靠 ACK，不把自动回复登记为已送达。同一 Endpoint 不应启用两个宿主自动回复。源码契约基于 AstrBot 4.28.1；真实聊天平台端到端验收仍待补验。
+
+两个入口选择相同 **character ID / owner**，并通过显式 IdentityBinding 绑定同一 Participant，各自使用不同 session ID，才是同一人物的连续互动。进程重启后状态从同一 SQLite 恢复。不要在另一个目录安装第二份 Runtime 来代替共享。
 
 此快捷配置限于同一网络命名空间。两个 Docker 容器、分离主机或 ChatGPT 云端不能把各自的 localhost 当成同一服务。跨主机走用户自己的受认证 HTTPS/OAuth 入口，见 [高级适配](docs/adapters.md)，不需要作者托管角色云。
 
@@ -92,7 +123,7 @@ python3 install.py uninstall
 
 rollback 切回上一个已安装版本，并验证它能打开现有数据库；不会把人物数据恢复成旧快照。uninstall 删除本安装登记且未被用户改写的配置项和 Skill，移除版本/缓存/bootstrap，**保留人物数据库、安装记录和私密恢复备份**。用户改写过的文件会导致卸载拒绝，请先自行保留并处理冲突。同样的 install 命令可重新安装并继续使用保留下来的数据。
 
-当前数据库 schema 为 2。首次打开 V1 时，先创建私有 SQLite 备份，再事务迁移。安装预检只验证临时快照，不提前迁移正在使用的数据库；正式启动新 Runtime 时才迁移；原始记录与无法映射内容保留并提示，撤销旧跨角色共享权限。默认导出 V3，仍接受 V1/V2 导入。旧程序不能打开 schema 2，安装回滚会拒绝不兼容的数据版本，不会删除数据库或偷偷恢复旧快照。确需回到旧程序时，由用户停止服务并选择恢复升级前备份；升级后的新数据不会自动反向合并。详见 docs/reference.md。
+当前数据库 schema 为 5。升级旧库前先创建私有 SQLite 备份，再事务迁移；schema 3 引入受众隔离，schema 4 引入统一生命周期，schema 5 将旧 Mood 保留为只读档案，不转换成 AffectState。安装预检只验证临时快照，不提前迁移正在使用的数据库；正式启动新 Runtime 时才迁移；原始记录与无法映射内容保留并提示，撤销旧跨角色共享权限。默认导出 V3，仍接受 V1/V2 导入。旧程序不能打开比自身支持版本更新的 schema，安装回滚会拒绝不兼容的数据版本，不会删除数据库或偷偷恢复旧快照。确需回到旧程序时，由用户停止服务并选择恢复升级前备份；升级后的新数据不会自动反向合并。详见 docs/reference.md。
 
 ## 中断恢复与排障
 

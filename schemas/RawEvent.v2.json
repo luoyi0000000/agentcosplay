@@ -1,5 +1,6 @@
 {
   "additionalProperties": false,
+  "description": "Keep source evidence separate from summaries, narratives and generation drafts.\n\n保存摄入的源证据，与摘要、叙事及生成草稿分离。",
   "properties": {
     "source_event_id": {
       "maxLength": 200,
@@ -29,7 +30,7 @@
       "type": "string"
     },
     "content": {
-      "maxLength": 4000,
+      "maxLength": 64000,
       "title": "Content",
       "type": "string"
     },
@@ -37,6 +38,22 @@
       "format": "date-time",
       "title": "Timestamp",
       "type": "string"
+    },
+    "timestamp_basis": {
+      "anyOf": [
+        {
+          "enum": [
+            "source",
+            "observed"
+          ],
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Timestamp Basis"
     },
     "host": {
       "default": "",
@@ -77,6 +94,53 @@
       ],
       "title": "Sensitivity",
       "type": "string"
+    },
+    "visible_kind": {
+      "anyOf": [
+        {
+          "enum": [
+            "SEND_TEXT",
+            "REPLY",
+            "REACTION",
+            "STICKER",
+            "FOLLOW_UP"
+          ],
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Visible Kind"
+    },
+    "logical_response_id": {
+      "anyOf": [
+        {
+          "maxLength": 200,
+          "minLength": 1,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Logical Response Id"
+    },
+    "segment_index": {
+      "anyOf": [
+        {
+          "maximum": 20,
+          "minimum": 0,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Segment Index"
     },
     "id": {
       "maxLength": 200,

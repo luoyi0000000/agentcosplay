@@ -1,5 +1,6 @@
 {
   "additionalProperties": false,
+  "description": "Require an operation and explicit target grant for canonical memory edits.\n\n规范记忆编辑须携带操作及显式目标授权。",
   "properties": {
     "operation_id": {
       "maxLength": 200,

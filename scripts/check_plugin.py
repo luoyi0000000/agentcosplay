@@ -1,5 +1,7 @@
 """Check local release manifests, Skill links, and complete brand PNG integrity.
 
+检查本地发布清单、Skill 引用及品牌 PNG 完整性，不要求历史原图逐字节相同。
+
 Run: python -m scripts.check_plugin (standard library only).
 """
 
@@ -14,7 +16,9 @@ from pathlib import Path
 from urllib.parse import unquote, urlsplit
 
 ROOT = Path(__file__).resolve().parents[1]
-LOGO_SHA256 = "038bd1960e363e0e01e7c7f7c0c6a9bf040206e16ba934c12e77424a241b5a44"
+# Integrity of the accepted release asset, not a prohibition on future approved resizing.
+# 校验当前已接受的发布资源，不禁止以后经确认的合理缩放或压缩。
+RELEASE_LOGO_SHA256 = "038bd1960e363e0e01e7c7f7c0c6a9bf040206e16ba934c12e77424a241b5a44"
 
 
 def require(condition: bool, message: str) -> None:
@@ -112,6 +116,23 @@ def check(root: Path = ROOT) -> dict:
     ]
     runtime = (root / "character_runtime/__init__.py").read_text(encoding="utf-8")
     require(f'__version__ = "{version}"' in runtime, "Runtime/package version mismatch")
+    for name in ("plugin.yaml", "metadata.yaml"):
+        metadata = (root / name).read_text(encoding="utf-8")
+        require(
+            re.search(r"(?m)^name: agentcosplay$", metadata) is not None,
+            "Native plugin name mismatch",
+        )
+        require(f"version: {version}\n" in metadata, "Native plugin version mismatch")
+    require(
+        "  - post_llm_call\n" in (root / "plugin.yaml").read_text(),
+        "Missing Hermes generation hook declaration",
+    )
+    require((root / "main.py").is_file(), "Missing AstrBot native entry")
+    require(
+        set(read_json(root / "_conf_schema.json"))
+        == {"runtime_url", "token_file", "host_id", "routes_json"},
+        "AstrBot configuration mismatch",
+    )
     catalog = read_json(root / ".agents/plugins/marketplace.json")
     names = [entry["name"] for entry in catalog["plugins"]]
     require(
@@ -168,7 +189,7 @@ def check(root: Path = ROOT) -> dict:
             size = check_png(path)
             digest = hashlib.sha256(path.read_bytes()).hexdigest()
             if field == "logo":
-                require(digest == LOGO_SHA256, "Original P1 logo has changed")
+                require(digest == RELEASE_LOGO_SHA256, "Release logo integrity mismatch")
             else:
                 require(size in ((128, 128), (256, 256)), "Composer icon must be 128px or 256px")
             assets[field] = {"size": size, "sha256": digest}

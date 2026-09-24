@@ -1,4 +1,7 @@
-"""Scoped transactional receipts, mutation grants, durable jobs and ingestion positions."""
+"""Scoped transactional receipts, mutation grants, durable jobs and ingestion positions.
+
+作用域事务回执、修改授权、持久任务及摄入位置。
+"""
 
 import json
 from collections.abc import Callable, Iterable
@@ -11,7 +14,10 @@ from .storage import Storage
 
 
 def fingerprint(value: Any) -> str:
-    """Stable JSON digest; rejects non-JSON values and non-finite numbers."""
+    """Stable JSON digest; rejects non-JSON values and non-finite numbers.
+
+    稳定 JSON 摘要；拒绝非 JSON 值及非有限数值。
+    """
     return sha256(
         json.dumps(
             value, sort_keys=True, ensure_ascii=False, separators=(",", ":"), allow_nan=False
@@ -33,7 +39,10 @@ def _identifiers(values: Iterable[str]) -> list[str]:
 
 
 class Operations:
-    """One owner + character namespace. Callbacks must perform local DB work only."""
+    """One owner + character namespace. Callbacks must perform local DB work only.
+
+    每个实例限定 Owner 与 Character；回调只能执行本地数据库操作。
+    """
 
     def __init__(
         self, storage: Storage, owner: str, character_id: str, clock: Callable[[], datetime] = now
@@ -79,6 +88,8 @@ class Operations:
 
         The caller validates proposals/authority and supplies only safe audit reasons. Never
         put an external send in this callback: SQLite cannot roll back a network effect.
+
+                将回调、回执及只含摘要的审计原子提交；重复操作返回原结果。
         """
         targets, evidence = _identifiers(target_ids), _identifiers(evidence_refs)
         if len(reason) > 500:
@@ -118,6 +129,16 @@ class Operations:
                 "perception": ("perception", "visual_prototype"),
                 "observation": ("companion",),
             }.get(domain, (domain,))
+
+            actor = getattr(self.storage, "actor", None)
+            if actor and not actor.private_context_allowed:
+                # Audit hashes must not read private state on behalf of a group operation.
+                # 群聊操作的审计摘要也不能越过私人数据边界。
+                collections = tuple(
+                    c
+                    for c in collections
+                    if c not in {"state", "relationship", "lifelike", "participant_adaptation"}
+                )
 
             def snapshot(ids: Iterable[str]) -> dict[str, Any]:
                 return {
@@ -193,7 +214,10 @@ class Operations:
         session_id: str | None = None,
         ttl_seconds: int = 300,
     ) -> dict[str, Any]:
-        """Issue a short-lived immutable grant from actual canonical targets, never guessed IDs."""
+        """Issue a short-lived immutable grant from actual canonical targets, never guessed IDs.
+
+        根据真实规范记录签发短期不可变授权，不能猜测目标 ID。
+        """
         targets, allowed = _identifiers(target_ids), _identifiers(operations)
         if not targets or not allowed or not 1 <= ttl_seconds <= 3600:
             raise ValueError("A grant requires targets, operations and a 1..3600 second lifetime")
@@ -233,7 +257,10 @@ class Operations:
         collection: str,
         session_id: str | None = None,
     ) -> None:
-        """Consume inside execute() so failed canonical mutations roll the grant back too."""
+        """Consume inside execute() so failed canonical mutations roll the grant back too.
+
+        必须在 execute 事务中消费；规范写入失败时授权消费也回滚。
+        """
         targets = _identifiers(target_ids)
         with self.storage.transaction():
             grant = self._get("mutation_grant", grant_id)
@@ -263,7 +290,10 @@ class Operations:
         retry_safe: bool = False,
         max_attempts: int = 3,
     ) -> dict[str, Any]:
-        """retry_safe is only for deterministic DB maintenance, never an external effect."""
+        """retry_safe is only for deterministic DB maintenance, never an external effect.
+
+        仅确定性的数据库维护可标记可重试，外部副作用不能标记。
+        """
         if not 1 <= max_attempts <= 10:
             raise ValueError("Job attempts must be between 1 and 10")
         digest = fingerprint(
@@ -297,7 +327,10 @@ class Operations:
             return job
 
     def claim(self, operation_id: str, *, lease_seconds: int = 300) -> dict[str, Any] | None:
-        """One worker wins. Expired unsafe work is quarantined with an unknown outcome."""
+        """One worker wins. Expired unsafe work is quarantined with an unknown outcome.
+
+        只有一个工作者领取；租约过期且不可安全重试的任务以未知结果隔离。
+        """
         if not 1 <= lease_seconds <= 3600:
             raise ValueError("Lease must be between 1 and 3600 seconds")
         with self.storage.transaction():
@@ -337,7 +370,10 @@ class Operations:
         return job
 
     def finish(self, operation_id: str, claim_id: str, result: dict[str, Any]) -> None:
-        """Call in the same outer transaction as the job's canonical DB mutations."""
+        """Call in the same outer transaction as the job's canonical DB mutations.
+
+        与任务的规范数据库修改在同一外层事务调用。
+        """
         with self.storage.transaction():
             job = self._claimed(operation_id, claim_id)
             job.update(
@@ -356,7 +392,10 @@ class Operations:
         retryable: bool = False,
         error_code: str = "failed",
     ) -> None:
-        """Never store exception text or retry ambiguous external effects."""
+        """Never store exception text or retry ambiguous external effects.
+
+        不保存异常正文，不重试结果不明的外部副作用。
+        """
         if not error_code.replace("_", "").isalnum() or len(error_code) > 80:
             raise ValueError("Use a short error code, not an exception body")
         with self.storage.transaction():
@@ -377,7 +416,10 @@ class Operations:
         *,
         expected_revision: int = 0,
     ) -> dict[str, Any]:
-        """A position, NOT dedup: call in the same transaction as source-event ingestion."""
+        """A position, NOT dedup: call in the same transaction as source-event ingestion.
+
+        仅记录位置，不提供去重；与源事件摄入在同一事务调用。
+        """
         _identifier(last_event_id)
         if last_timestamp.tzinfo is None or last_timestamp.utcoffset() is None:
             raise ValueError("Checkpoint timestamp requires a timezone")

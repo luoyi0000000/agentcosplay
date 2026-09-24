@@ -1,4 +1,7 @@
-"""Merge native host config without replacing other servers or printing secrets."""
+"""Merge host configuration without replacing other servers or printing secrets.
+
+合并宿主配置，不替换其他服务，也不输出密钥。
+"""
 
 import json
 import sys
@@ -9,6 +12,10 @@ import yaml  # type: ignore[import-untyped]
 
 
 def edit_config(host: str, text: str, server: dict[str, Any], *, remove: bool = False) -> str:
+    """Edit only the matching managed entry; reject conflicting user configuration.
+
+    仅修改匹配的托管配置项；遇到冲突的用户配置时拒绝覆盖。
+    """
     if host == "codex":
         config = tomlkit.parse(text)
     elif host == "hermes":
@@ -44,7 +51,9 @@ def edit_config(host: str, text: str, server: dict[str, Any], *, remove: bool = 
 if __name__ == "__main__":
     request = json.load(sys.stdin)
     try:
-        print(json.dumps({"text": edit_config(**request)}, ensure_ascii=False))
+        # Escape the wire envelope only; decoded host files still contain Unicode.
+        # 仅转义管道外层 JSON；解码后的宿主配置仍保留原始中文。
+        print(json.dumps({"text": edit_config(**request)}))
     except (ValueError, yaml.YAMLError):
         # Do not echo parser errors: they can contain source lines with credentials.
         print("Invalid or conflicting host configuration", file=sys.stderr)

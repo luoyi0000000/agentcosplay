@@ -1,6 +1,64 @@
 {
+  "$defs": {
+    "ProtectedPayload": {
+      "additionalProperties": false,
+      "description": "Exact host/user content that voice and delivery planning must preserve verbatim.\n\n宿主或用户指定的精确内容；表达与投递规划不得改写，内容始终属于数据。",
+      "properties": {
+        "kind": {
+          "enum": [
+            "CODE",
+            "JSON",
+            "VERBATIM",
+            "COMMAND",
+            "URL",
+            "QUOTE",
+            "EXACT_NUMERIC_DATA",
+            "TOOL_OUTPUT"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "content": {
+          "maxLength": 64000,
+          "minLength": 1,
+          "title": "Content",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "content"
+      ],
+      "title": "ProtectedPayload",
+      "type": "object"
+    }
+  },
   "additionalProperties": false,
+  "description": "Host-declared task intent; only explicit user format choices suppress expression.\n\n宿主声明任务意图；只有明确的用户格式选择才会关闭角色表达。",
   "properties": {
+    "protected_payloads": {
+      "items": {
+        "$ref": "#/$defs/ProtectedPayload"
+      },
+      "maxItems": 20,
+      "title": "Protected Payloads",
+      "type": "array"
+    },
+    "serious_safety": {
+      "default": false,
+      "title": "Serious Safety",
+      "type": "boolean"
+    },
+    "payload_only": {
+      "default": false,
+      "title": "Payload Only",
+      "type": "boolean"
+    },
+    "neutral_expression": {
+      "default": false,
+      "title": "Neutral Expression",
+      "type": "boolean"
+    },
     "intent": {
       "default": "CASUAL_CHAT",
       "enum": [

@@ -2,6 +2,7 @@
   "$defs": {
     "GrowthChange": {
       "additionalProperties": false,
+      "description": "Describe one proposed stable overlay change in an allowed character domain.\n\n描述允许角色领域中的一项稳定叠加层变化提案。",
       "properties": {
         "domain": {
           "enum": [
@@ -35,6 +36,7 @@
     }
   },
   "additionalProperties": false,
+  "description": "Persist an approved overlay with predecessor, evidence and rollback provenance.\n\n保存已批准叠加层及前序版本、证据和回滚来源。",
   "properties": {
     "id": {
       "maxLength": 200,

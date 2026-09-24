@@ -1,4 +1,7 @@
-"""Thin MCP adapter over the same runtime used by every platform."""
+"""Thin MCP adapter over the same runtime used by every platform.
+
+复用相同 Runtime 的轻量 MCP 适配层。
+"""
 
 from collections.abc import Callable
 from functools import wraps
@@ -15,11 +18,14 @@ from pydantic import AnyHttpUrl, Field, ValidationError
 from starlette.applications import Starlette
 
 from . import __version__
-from .auth import JWTVerifier, LocalTokenVerifier
-from .companion_models import CompanionUpdate
+from .auth import JWTVerifier, LocalTokenVerifier, TurnTokenVerifier
+from .companion_models import CompanionUpdate, LegacyMoodWriteUnsupported
+from .conversation import ConversationDelivery, TurnIntakeBuffer
+from .conversation_models import EndpointCapabilities, SemanticResponse
 from .diagnostics import diagnose
 from .identity import bind
-from .knowledge_models import EventBatch, MemoryMutation, MemoryProposal, TurnProposal
+from .knowledge_models import EventBatch, EventInput, MemoryMutation, MemoryProposal, TurnProposal
+from .lifecycle import HostCapabilities, TurnEnvelope, TurnLifecycle
 from .lifelike_models import InteractionRequest, PerceptionObservation, VisualPrototype
 from .models import (
     Candidate,
@@ -41,19 +47,55 @@ from .persistence_models import GenerationRequest, RecallRequest
 from .providers import Observation, Provider
 from .runtime import Runtime
 from .safety import check_content
+from .scope import ScopeResolver
 from .storage import Storage
 
 P = ParamSpec("P")
 
 
 def safe(fn: Callable[P, Any]) -> Callable[P, dict[str, Any]]:
+    """Redact failures while retaining stable compatibility error codes.
+
+    对失败脱敏，同时保留稳定兼容错误码。
+    """
+
     @wraps(fn)
     def call(*args: P.args, **kwargs: P.kwargs) -> dict[str, Any]:
         try:
+            access = get_access_token()
+            if access and "character:discovery" in access.scopes:
+                raise ValueError(
+                    "Discovery credentials cannot execute tools; a verified turn is required"
+                )
+            if access and any(s.startswith("character:turn:") for s in access.scopes):
+                # A scoped model tool token cannot administer identities or attest delivery.
+                # 模型的单轮工具令牌不能管理身份、伪造原始证据或确认平台投递。
+                if fn.__name__ not in {
+                    "runtime_context",
+                    "memory_recall",
+                    "memory_write",
+                    "memory_promote",
+                    "turn_commit",
+                    "session_control",
+                    "context_explain",
+                    "character_read",
+                    "companion_control",
+                    "runtime_doctor",
+                    "perception_observe",
+                }:
+                    raise ValueError("This operation requires the trusted owner/host bridge")
             result = fn(*args, **kwargs)
             if isinstance(result, Model):
                 result = result.model_dump(mode="json")
             return {"ok": True, "result": result}
+        except LegacyMoodWriteUnsupported as exc:
+            return {
+                "ok": False,
+                "error": exc.code,
+                "read_only": exc.read_only,
+                "replacement": exc.replacement,
+                "message": str(exc),
+            }
         except ValidationError:
             return {
                 "ok": False,
@@ -70,6 +112,11 @@ def safe(fn: Callable[P, Any]) -> Callable[P, dict[str, Any]]:
 
 
 class DefinitionPatch(Model):
+    """Bound explicit character edits without exposing storage ownership fields.
+
+    约束显式角色编辑，不暴露存储归属字段。
+    """
+
     name: str | None = Field(default=None, min_length=1, max_length=100)
     origin: Literal["original", "ip"] | None = None
     mode: Mode | None = None
@@ -81,6 +128,11 @@ class DefinitionPatch(Model):
 
 
 class CharacterWrite(Model):
+    """Validate the public character mutation envelope; authority is resolved separately.
+
+    验证公开角色修改请求；权限另行解析。
+    """
+
     operation_id: Identifier | None = None
     allowlist_id: Identifier | None = None
     action: Literal["create", "update", "relationship"]
@@ -93,6 +145,11 @@ class CharacterWrite(Model):
 
 
 class SessionControl(Model):
+    """Describe explicit session actions, never infer a participant from message text.
+
+    描述显式会话动作，不从正文猜测参与者身份。
+    """
+
     host: str = Field(default="", max_length=200)
     platform: str = Field(default="", max_length=200)
     actor_id: str = Field(default="", max_length=200)
@@ -115,6 +172,11 @@ class SessionControl(Model):
 
 
 class MemoryWrite(Model):
+    """Require current evidence and operation contracts for public memory writes.
+
+    公开记忆写入必须满足当前证据及操作契约。
+    """
+
     action: Literal["store", "modify", "forget", "archive"]
     character_id: Identifier
     session_id: Identifier
@@ -128,6 +190,11 @@ class MemoryWrite(Model):
 
 
 def require_operation(operation_id: str | None) -> str:
+    """Reject legacy writes lacking an idempotency key with migration guidance.
+
+    拒绝缺少幂等键的旧写入，并提供迁移提示。
+    """
+
     if not operation_id:
         raise ValueError(
             "compatibility_error: 2.x requires operation_id, RawEvent-backed proposals "
@@ -147,7 +214,12 @@ def build_server(
     resource: str = "http://127.0.0.1:8765/mcp",
     providers: tuple[Provider, ...] = (),
 ) -> MCPServer[Any]:
-    verifier: JWTVerifier | LocalTokenVerifier | None = None
+    """Expose one Runtime through authenticated owner or restricted turn tools.
+
+    通过认证 Owner 或受限回合工具暴露同一个 Runtime。
+    """
+
+    verifier: JWTVerifier | LocalTokenVerifier | TurnTokenVerifier | None = None
     auth = None
     if issuer or audience or jwks_url:
         if providers:
@@ -157,7 +229,8 @@ def build_server(
         verifier = JWTVerifier(issuer or "", audience or "", jwks_url or "", resource)
     elif token:
         verifier = LocalTokenVerifier(token, local_owner, resource)
-    if verifier:
+    if verifier is not None and not isinstance(verifier, TurnTokenVerifier):
+        verifier = TurnTokenVerifier(verifier, resource)
         auth = AuthSettings(
             issuer_url=AnyHttpUrl(issuer or "http://127.0.0.1:8765"),
             resource_server_url=AnyHttpUrl(resource),
@@ -176,13 +249,32 @@ def build_server(
         "Commit important memories after each turn. User facts need explicit promotion.",
     )
 
-    def runtime() -> Runtime:
+    def runtime(turn_id: str | None = None) -> Runtime:
         if verifier:
             access = get_access_token()
             if access is None or not access.subject:
                 raise ValueError("Authenticated user identity is required")
-            return Runtime(storage, access.subject, providers=providers)
-        return Runtime(storage, local_owner, providers=providers)
+            if "character:discovery" in access.scopes:
+                raise ValueError("Discovery credentials cannot access Runtime state")
+            rt = Runtime(storage, access.subject, providers=providers)
+            turns = [
+                s.removeprefix("character:turn:")
+                for s in access.scopes
+                if s.startswith("character:turn:")
+            ]
+            if turns:
+                if len(turns) != 1 or (turn_id is not None and turn_id != turns[0]):
+                    raise ValueError("Turn capability does not authorize this interaction")
+                scoped_runtime = rt.for_turn(turns[0])
+                if (
+                    not scoped_runtime.actor
+                    or access.client_id != "turn:" + scoped_runtime.actor.host
+                ):
+                    raise ValueError("Host capability mismatch")
+                return scoped_runtime
+        else:
+            rt = Runtime(storage, local_owner, providers=providers)
+        return rt.for_turn(turn_id) if turn_id else rt
 
     def scoped(rt: Runtime, session_id: str, character_id: str, *, ooc: bool = False) -> None:
         s = rt.session(session_id)
@@ -194,12 +286,175 @@ def build_server(
     read = ToolAnnotations(read_only_hint=True, destructive_hint=False, open_world_hint=False)
     write = ToolAnnotations(read_only_hint=False, destructive_hint=True, open_world_hint=False)
 
+    @server.tool(annotations=write)
+    @safe
+    def host_prepare_turn(envelope: TurnEnvelope, capabilities: HostCapabilities) -> dict[str, Any]:
+        """Automatic trusted-host lifecycle; the model does not have to call this tool.
+
+        可信宿主自动生命周期入口；模型不需要主动调用，核心实现独立于 MCP 传输。
+        """
+        rt = runtime()
+        result = TurnLifecycle(rt).prepare(envelope, capabilities)
+        if isinstance(verifier, TurnTokenVerifier):
+            actor = ScopeResolver(storage, rt.owner, rt.clock).load_turn(result["turn_id"])
+            result["capability"] = verifier.issue(
+                rt.owner, actor.id, actor.host, int(actor.expires_at.timestamp())
+            )
+        return result
+
+    @server.tool(annotations=write)
+    @safe
+    def host_observe_ambient(
+        envelope: TurnEnvelope, capabilities: HostCapabilities
+    ) -> dict[str, Any]:
+        """Observe verified public activity without generation.
+
+        观察经验证的公开活动，不发起生成。
+        """
+        return TurnLifecycle(runtime()).observe_ambient(envelope, capabilities)
+
+    @server.tool(annotations=write)
+    @safe
+    def host_observe_generation(
+        turn_id: Identifier, operation_id: Identifier, text: str
+    ) -> dict[str, Any]:
+        """Observe generated output without asserting delivery. / 观察生成输出，不声明已送达。"""
+        return TurnLifecycle(runtime()).observe_generation(turn_id, operation_id, text)
+
+    @server.tool(annotations=write)
+    @safe
+    def host_finalize_turn(
+        turn_id: Identifier, operation_id: Identifier, proposal: TurnProposal | None = None
+    ) -> dict[str, Any]:
+        """Finish a generation through existing evidence gates. / 经既有证据门结束本轮生成。"""
+        return TurnLifecycle(runtime()).finalize(turn_id, operation_id, proposal)
+
+    @server.tool(annotations=write)
+    @safe
+    def host_turn_open(
+        host: Identifier,
+        platform: Identifier,
+        actor_id: Identifier,
+        endpoint_id: Identifier,
+        session_id: Identifier,
+        request_id: Identifier,
+        event: EventInput | None = None,
+        buffer_intake: bool = False,
+        expected_endpoint_kind: Literal["dm", "group"] | None = None,
+    ) -> dict[str, Any]:
+        """Trusted host ingress: resolve an actor and issue model tools a limited capability.
+
+        可信宿主入口：解析 Actor 并签发受限模型工具令牌，管理凭据不得进入模型。
+        """
+        rt = runtime()
+        with storage.transaction():
+            # Host-observed audience must agree with the authoritative binding.
+            # 宿主观察到的受众类型必须与规范绑定一致，防止群入口映射到私人上下文。
+            if expected_endpoint_kind is not None:
+                endpoint = storage.get(rt.owner, "platform_binding", endpoint_id)
+                if not endpoint or endpoint.get("kind") != expected_endpoint_kind:
+                    raise ValueError("Host audience does not match the endpoint binding")
+            turn = ScopeResolver(storage, rt.owner).begin_turn(
+                host=host,
+                platform=platform,
+                actor_id=actor_id,
+                endpoint_id=endpoint_id,
+                session_id=session_id,
+                request_id=request_id,
+            )
+            result: dict[str, Any] = {"turn_id": turn.id, "character_id": turn.character_id}
+            if event is not None:
+                if event.source_kind != "USER_DIRECT":
+                    raise ValueError("Ingress requires a visible direct user event")
+                result["ingestion"] = rt.for_turn(turn.id).knowledge.ingest(
+                    EventBatch(
+                        session_id=turn.id,
+                        operation_id=fingerprint([event.source_id, event.source_event_id]),
+                        events=[event],
+                    )
+                )
+            if isinstance(verifier, TurnTokenVerifier):
+                result["capability"] = verifier.issue(
+                    rt.owner, turn.id, host, int(turn.expires_at.timestamp())
+                )
+            if buffer_intake:
+                if event is None:
+                    raise ValueError("Buffered intake requires a direct source event")
+                result["intake"] = TurnIntakeBuffer(rt).push(
+                    turn.id, result["ingestion"]["event_ids"][0]
+                )
+            return result
+
+    @server.tool(annotations=write)
+    @safe
+    def host_intake_claim(buffer_id: Identifier) -> dict[str, Any]:
+        """Claim one debounced batch for the current host model.
+
+        为宿主当前模型领取一次合并批次；管理凭据不可暴露给模型。
+        """
+        return {"batch": TurnIntakeBuffer(runtime()).claim(buffer_id)}
+
+    @server.tool(annotations=write)
+    @safe
+    def host_response_plan(
+        turn_id: Identifier,
+        operation_id: Identifier,
+        response: SemanticResponse,
+        request: GenerationRequest,
+        capabilities: EndpointCapabilities,
+    ) -> dict[str, Any]:
+        """Persist one semantic response; capabilities are attested by trusted adapter code.
+
+        保存一份语义回复；平台能力必须由可信 Adapter 声明，模型不能授予发送权。
+        """
+        return ConversationDelivery(runtime()).create(
+            turn_id, operation_id, response, request, capabilities
+        )
+
+    @server.tool(annotations=write)
+    @safe
+    def host_response_claim(plan_id: Identifier, segment_index: int) -> dict[str, Any]:
+        """Claim a due visible segment once. / 只领取一次到期可见片段。"""
+        return {"segment": ConversationDelivery(runtime()).claim(plan_id, segment_index)}
+
+    @server.tool(annotations=write)
+    @safe
+    def host_response_ack(
+        plan_id: Identifier,
+        segment_index: int,
+        claim_id: Identifier,
+        delivered: bool | None,
+        visible_content: str = "",
+        delivery_reference: str = "",
+    ) -> dict[str, Any]:
+        """Attest actual final delivery; uncertainty never permits another send.
+
+        确认平台实际最终投递；未知结果绝不授予重发权。
+        """
+        return ConversationDelivery(runtime()).acknowledge(
+            plan_id,
+            segment_index,
+            claim_id,
+            delivered,
+            visible_content=visible_content,
+            delivery_reference=delivery_reference,
+        )
+
+    @server.tool(annotations=write)
+    @safe
+    def host_response_cancel(plan_id: Identifier) -> dict[str, Any]:
+        """Cancel unsent segments only. / 只取消尚未发送的片段。"""
+        return ConversationDelivery(runtime()).cancel(plan_id)
+
     @server.tool(annotations=read)
     @safe
     def character_read(
         character_id: Identifier | None = None, session_id: Identifier | None = None
     ) -> dict[str, Any]:
-        """Read owned configuration; OOC session requests receive short-lived mutation targets."""
+        """Read owned configuration; OOC session requests receive short-lived mutation targets.
+
+        读取所属配置；OOC 会话请求取得短期修改目标授权。
+        """
         rt = runtime()
         if character_id is None:
             return {
@@ -209,8 +464,13 @@ def build_server(
             }
         result: dict[str, Any] = {
             "definition": rt.characters.get(character_id).model_dump(mode="json"),
-            "state": rt.characters.state(character_id).model_dump(mode="json"),
         }
+        if rt.actor is None or rt.actor.private_context_allowed:
+            result["state"] = rt.characters.state(character_id).model_dump(mode="json")
+        if rt.actor:
+            # Stable definition is public; participant state must never appear in a group.
+            # 稳定角色定义可以共享；Participant 私有状态绝不进入群聊工具结果。
+            return result
         if session_id:
             scoped(rt, session_id, character_id, ooc=True)
             ops = rt.knowledge.operations(character_id)
@@ -225,10 +485,13 @@ def build_server(
     @server.tool(annotations=write)
     @safe
     def character_write(request: CharacterWrite) -> dict[str, Any]:
-        """Create idempotently; OOC edits require a current character_read target grant."""
+        """Create idempotently; OOC edits require a current character_read target grant.
+
+        幂等创建；OOC 编辑须携带当前 character_read 签发的目标授权。
+        """
         operation = require_operation(request.operation_id)
         rt = runtime()
-        with storage.transaction():
+        with rt.storage.transaction():
             if request.action == "create":
                 if request.definition is None:
                     raise ValueError("A definition is required")
@@ -239,7 +502,7 @@ def build_server(
                     )
                 check_content(definition.model_dump_json())
                 payload = {"action": "create", "definition": definition.model_dump(mode="json")}
-                existing = storage.get(rt.owner, "definition", definition.id)
+                existing = rt.storage.get(rt.owner, "definition", definition.id)
                 if existing is None:
                     rt.characters.create(definition)
                 ops = rt.knowledge.operations(definition.id)
@@ -303,7 +566,10 @@ def build_server(
     @server.tool(annotations=write)
     @safe
     def session_control(request: SessionControl) -> dict[str, Any]:
-        """Route sessions, switch characters, control OOC and temporary task mode."""
+        """Route sessions, switch characters, control OOC and temporary task mode.
+
+        显式路由会话、切换角色，并控制 OOC 与临时任务模式。
+        """
         rt = runtime()
         if request.action == "open":
             return rt.open_session(
@@ -336,7 +602,10 @@ def build_server(
         generation: GenerationRequest | None = None,
         interaction_request: InteractionRequest | None = None,
     ) -> dict[str, Any]:
-        """Load definition, state, relevant roleplay memories and runtime rules."""
+        """Load definition, state, relevant roleplay memories and runtime rules.
+
+        载入所属定义、状态、相关记忆及 Runtime 规则。
+        """
         return runtime().context(
             session_id,
             query,
@@ -354,18 +623,24 @@ def build_server(
         operation_id: Identifier | None = None,
         allowlist_id: Identifier | None = None,
     ) -> dict[str, Any]:
-        """OOC read issues an edit grant; updates require that grant and an operation ID."""
+        """OOC read issues an edit grant; updates require that grant and an operation ID.
+
+        OOC 读取签发编辑授权；更新须携带授权及操作 ID。
+        """
         rt = runtime()
-        with storage.transaction():
+        if update is not None and update.mood is not None:
+            raise LegacyMoodWriteUnsupported()
+        with rt.storage.transaction():
             session = rt.knowledge.scope(session_id, ooc=True)
             assert session.character_id is not None
             cid = session.character_id
             state = rt.companion.get(cid)
-            if storage.get(rt.owner, "companion", cid) is None:
+            if rt.storage.get(rt.owner, "companion", cid) is None:
                 rt.companion._save(state)
             ops = rt.knowledge.operations(cid)
             if update is None:
                 return {
+                    "legacy_mood_read_only": True,
                     "state": state.model_dump(
                         mode="json", exclude={"pending_decision": {"claim_id"}}
                     ),
@@ -401,13 +676,42 @@ def build_server(
 
     @server.tool(annotations=write)
     @safe
+    def host_companion_configure(
+        turn_id: Identifier,
+        update: CompanionUpdate,
+        operation_id: Identifier,
+        confirmation: str,
+    ) -> dict[str, Any]:
+        """Owner-only endpoint configuration; model turn tokens cannot call this tool.
+
+        Owner 专用受众配置；模型的单轮令牌不能调用此入口。
+        """
+        if not confirmation.strip():
+            raise ValueError("Explicit owner confirmation is required")
+        rt = runtime(turn_id)
+        assert rt.actor
+        cid = rt.actor.character_id
+        return rt.knowledge.operations(cid).execute(
+            operation_id,
+            {"update": update.model_dump(mode="json"), "confirmation": confirmation},
+            lambda: {"revision": rt.companion.update(cid, update, endpoint_admin=True).revision},
+            domain="companion",
+            operation="UPDATE",
+            authority="USER_MANUAL",
+        )
+
+    @server.tool(annotations=write)
+    @safe
     def provider_observe(
         session_id: Identifier, observation: Observation, operation_id: Identifier | None = None
     ) -> dict[str, Any]:
-        """Supply sourced, expiring host observations, never credentials or user profile truth."""
+        """Supply sourced, expiring host observations, never credentials or user profile truth.
+
+        提交有来源和有效期的宿主观察，不提交凭据或冒充用户真实档案。
+        """
         operation = require_operation(operation_id)
         rt = runtime()
-        with storage.transaction():
+        with rt.storage.transaction():
             session = rt.knowledge.scope(session_id)
             assert session.character_id is not None
             check_content(observation.model_dump_json())
@@ -427,20 +731,30 @@ def build_server(
     @server.tool(annotations=write)
     @safe
     def proactive_decide(
-        character_id: Identifier, reservation_id: Identifier | None = None
+        character_id: Identifier,
+        reservation_id: Identifier | None = None,
+        turn_id: Identifier | None = None,
     ) -> dict[str, Any]:
-        """Scheduler decision and atomic reservation; does not generate or send a message."""
-        rt = runtime()
-        with storage.transaction():
+        """Scheduler decision and atomic reservation; does not generate or send a message.
+
+        调度决策及原子预留，不生成或发送消息。
+        """
+        rt = runtime(turn_id)
+        with rt.storage.transaction():
             rt.advance(character_id)
             return rt.companion.decide(character_id, reservation_id).model_dump(mode="json")
 
     @server.tool(annotations=write)
     @safe
-    def proactive_prepare(session_id: Identifier, decision_id: Identifier) -> dict[str, Any]:
-        """Claim one generation attempt with assembled context; never sends a message."""
-        rt = runtime()
-        with storage.transaction():
+    def proactive_prepare(
+        session_id: Identifier, decision_id: Identifier, turn_id: Identifier | None = None
+    ) -> dict[str, Any]:
+        """Claim one generation attempt with assembled context; never sends a message.
+
+        使用已组装上下文领取一次生成尝试，不发送消息。
+        """
+        rt = runtime(turn_id)
+        with rt.storage.transaction():
             session = rt.knowledge.scope(session_id)
             assert session.character_id is not None
             decision = rt.companion.prepare(session.character_id, decision_id)
@@ -452,14 +766,44 @@ def build_server(
     @server.tool(annotations=write)
     @safe
     def proactive_delivery(
-        character_id: Identifier, decision_id: Identifier, claim_id: Identifier
+        character_id: Identifier,
+        decision_id: Identifier,
+        claim_id: Identifier,
+        turn_id: Identifier | None = None,
+        binding_revision: int | None = None,
     ) -> dict[str, Any]:
-        """Immediately before send, recheck eligibility and claim one delivery attempt."""
-        return (
-            runtime()
-            .companion.delivery(character_id, decision_id, claim_id)
-            .model_dump(mode="json")
-        )
+        """Claim existing proactive delivery and endpoint authority atomically.
+
+        在同一事务中取得既有主动投递权与 Endpoint 发送权，不创建第二套主动引擎。
+        """
+        rt = runtime(turn_id)
+        with rt.storage.transaction():
+            receipt = None
+            if rt.actor:
+                if binding_revision is None:
+                    raise ValueError("Scoped delivery requires the current binding revision")
+                receipt = ScopeResolver(storage, rt.owner).claim_delivery(
+                    rt.actor.platform_binding,
+                    decision_id,
+                    rt.actor.host,
+                    binding_revision,
+                )
+                if receipt is None:
+                    raise ValueError("Delivery was already claimed; do not resend")
+            decision = rt.companion.delivery(character_id, decision_id, claim_id)
+            if rt.actor and not decision.should_contact:
+                assert receipt is not None
+                ScopeResolver(storage, rt.owner).ack_delivery(
+                    rt.actor.platform_binding,
+                    decision_id,
+                    rt.actor.host,
+                    receipt["claim_id"],
+                    False,
+                )
+            result = decision.model_dump(mode="json")
+            if receipt:
+                result["endpoint_claim_id"] = receipt["claim_id"]
+            return result
 
     @server.tool(annotations=write)
     @safe
@@ -468,9 +812,26 @@ def build_server(
         decision_id: Identifier,
         delivered: bool | None,
         claim_id: Identifier | None = None,
+        turn_id: Identifier | None = None,
+        endpoint_claim_id: Identifier | None = None,
     ) -> dict[str, Any]:
-        """Acknowledge actual delivery; unknown delivery must not be retried automatically."""
-        return runtime().companion.ack(character_id, decision_id, delivered, claim_id)
+        """Acknowledge both ledgers together; unknown never grants another Host a resend.
+
+        原子确认主动状态与 Endpoint 投递记录；未知结果不能让其他 Host 重发。
+        """
+        rt = runtime(turn_id)
+        with rt.storage.transaction():
+            if rt.actor:
+                if endpoint_claim_id is None:
+                    raise ValueError("Scoped delivery acknowledgement requires endpoint claim")
+                ScopeResolver(storage, rt.owner).ack_delivery(
+                    rt.actor.platform_binding,
+                    decision_id,
+                    rt.actor.host,
+                    endpoint_claim_id,
+                    delivered,
+                )
+            return rt.companion.ack(character_id, decision_id, delivered, claim_id)
 
     @server.tool(annotations=read)
     @safe
@@ -480,9 +841,12 @@ def build_server(
         real: bool = False,
         request: RecallRequest | None = None,
     ) -> dict[str, Any]:
-        """Scoped recall; OOC returns current mutation allowlists. Retrieval never reinforces."""
+        """Scoped recall; OOC returns current mutation allowlists. Retrieval never reinforces.
+
+        按作用域召回；OOC 返回当前修改授权；召回本身不强化证据。
+        """
         rt = runtime()
-        with storage.transaction():
+        with rt.storage.transaction():
             session = rt.knowledge.scope(session_id)
             assert session.character_id is not None
             cid = session.character_id
@@ -494,8 +858,14 @@ def build_server(
                 for f in rt.knowledge.records("fact", cid)
                 if f.get("validity") == "active" and (real or f.get("subject") != "owner")
             ]
+            projected, decisions = rt.memory.project(cid, memories, query=query, recall=request)
             result: dict[str, Any] = {
-                "memories": [m.model_dump(mode="json") for m in memories],
+                # OOC maintenance can inspect authorized originals; ordinary generation cannot.
+                # OOC 维护可审阅已授权规范记录；普通生成只接收使用策略允许的投影。
+                "memories": [m.model_dump(mode="json") for m in memories]
+                if session.ooc
+                else projected,
+                "memory_use_decisions": decisions,
                 "facts": facts,
             }
             result["use_policy"] = {
@@ -504,16 +874,9 @@ def build_server(
                 "facts": "only active facts are current; preserve provenance",
                 "quotes": "quote only exact original RawEvent content",
             }
-            if request and request.intent == "EXACT_QUOTE":
-                refs = list(dict.fromkeys(ref for m in memories for ref in m.evidence_refs))
-                result["quotes"] = (
-                    [
-                        {"event_id": e.id, "content": e.content, "source_kind": e.source_kind}
-                        for e in rt.knowledge.evidence(cid, refs[:20])
-                    ]
-                    if refs
-                    else []
-                )
+            if request and request.intent in {"EXACT_QUOTE", "EXACT_RECALL"}:
+                result["raw_events"] = rt.knowledge.recall_events(cid, request, query)
+                result["quotes"] = result["raw_events"]
             if request and request.intent in ("CURRENT_STATE", "GOAL", "OPEN_LOOP"):
                 companion = rt.companion.get(cid)
                 result["current_state"] = {
@@ -523,7 +886,9 @@ def build_server(
                     "open_loops": [
                         t.model_dump(mode="json") for t in companion.topics if t.status == "open"
                     ],
-                    "relationship": rt.knowledge.relationship.projection(cid),
+                    "relationship": rt.knowledge.relationship.projection(cid)
+                    if rt.actor is None or rt.actor.private_context_allowed
+                    else {},
                 }
             if session.ooc:
                 ops = rt.knowledge.operations(cid)
@@ -544,10 +909,13 @@ def build_server(
     @server.tool(annotations=write)
     @safe
     def memory_write(request: MemoryWrite) -> dict[str, Any]:
-        """2.x evidence-backed creation; edits require OOC plus a memory_recall allowlist."""
+        """2.x evidence-backed creation; edits require OOC plus a memory_recall allowlist.
+
+        2.x 创建必须有证据；编辑须处于 OOC 并携带 memory_recall 授权。
+        """
         operation = require_operation(request.operation_id)
         rt = runtime()
-        with storage.transaction():
+        with rt.storage.transaction():
             scoped(rt, request.session_id, request.character_id, ooc=request.action != "store")
             if request.action == "store":
                 if request.proposal is None:
@@ -584,7 +952,10 @@ def build_server(
         operation_id: Identifier | None = None,
         allowlist_id: Identifier | None = None,
     ) -> dict[str, Any]:
-        """Explicit OOC promotion with direct user evidence and a fresh target grant."""
+        """Explicit OOC promotion with direct user evidence and a fresh target grant.
+
+        显式 OOC 提升，要求直接用户证据及新鲜目标授权。
+        """
         operation = require_operation(operation_id)
         if not allowlist_id:
             raise ValueError("A fresh memory_recall allowlist is required")
@@ -607,7 +978,10 @@ def build_server(
         turn_id: Identifier | None = None,
         candidates: list[Candidate] | None = None,
     ) -> dict[str, Any]:
-        """Commit a 2.x TurnProposal atomically; old writes return compatibility errors."""
+        """Commit a 2.x TurnProposal atomically; old writes return compatibility errors.
+
+        原子提交 2.x 回合提案；旧写入返回兼容错误。
+        """
         if proposal is None or turn_id is not None or candidates is not None:
             raise ValueError(
                 "compatibility_error: call event_ingest then turn_commit(session_id, "
@@ -618,7 +992,10 @@ def build_server(
     @server.tool(annotations=write)
     @safe
     def event_ingest(request: EventBatch) -> dict[str, Any]:
-        """Persist visible events once by stable source identity; never hidden reasoning."""
+        """Persist visible events once by stable source identity; never hidden reasoning.
+
+        按稳定源身份只保存一次可见事件，不保存隐藏推理。
+        """
         return runtime().knowledge.ingest(request)
 
     @server.tool(annotations=write)
@@ -629,10 +1006,99 @@ def build_server(
         actor_id: Identifier,
         operation_id: Identifier,
         confirmation: str,
+        participant_id: Identifier | None = None,
     ) -> dict[str, Any]:
-        """Bind a stable platform actor to the authenticated owner; never use nicknames."""
+        """Bind stable platform actors to participants under authenticated owner authority.
+
+        由认证 Owner 将稳定平台 Actor 显式绑定到 Participant，不使用昵称猜测。
+        """
         rt = runtime()
-        return bind(storage, rt.owner, host, platform, actor_id, operation_id, confirmation)
+        return bind(
+            storage,
+            rt.owner,
+            host,
+            platform,
+            actor_id,
+            operation_id,
+            confirmation,
+            participant_id=participant_id,
+        )
+
+    @server.tool(annotations=write)
+    @safe
+    def endpoint_bind(
+        platform: Identifier,
+        endpoint: Identifier,
+        kind: Literal["dm", "group"],
+        default_character_id: Identifier,
+        operation_id: Identifier,
+        confirmation: str,
+        participant_id: Identifier | None = None,
+        expected_revision: int | None = None,
+    ) -> dict[str, Any]:
+        """Owner configures an endpoint explicitly; a DM has exactly one recipient.
+
+        Owner 显式配置 Endpoint；私聊必须指定唯一 Participant，群聊不能绑定私人受众。
+        """
+        rt = runtime()
+        return ScopeResolver(storage, rt.owner).bind_endpoint(
+            platform,
+            endpoint,
+            kind,
+            default_character_id,
+            participant_id=participant_id,
+            operation_id=operation_id,
+            confirmation=confirmation,
+            expected_revision=expected_revision,
+        )
+
+    @server.tool(annotations=write)
+    @safe
+    def character_route_bind(
+        endpoint_id: Identifier,
+        character_id: Identifier,
+        operation_id: Identifier,
+        confirmation: str,
+        participant_id: Identifier | None = None,
+        expected_revision: int | None = None,
+    ) -> dict[str, Any]:
+        """Authorize a route without changing the endpoint default or active session.
+
+        授权可用角色路由；不会修改 Endpoint 默认角色或当前 Session。
+        """
+        rt = runtime()
+        return ScopeResolver(storage, rt.owner).bind_route(
+            endpoint_id,
+            participant_id,
+            character_id,
+            operation_id=operation_id,
+            confirmation=confirmation,
+            expected_revision=expected_revision,
+        )
+
+    @server.tool(annotations=write)
+    @safe
+    def delivery_bind(
+        endpoint_id: Identifier,
+        host: Identifier,
+        adapter: Identifier,
+        operation_id: Identifier,
+        confirmation: str,
+        expected_revision: int | None = None,
+    ) -> dict[str, Any]:
+        """Configure the sole sender; unknown sends block authority handover.
+
+        配置唯一发送者；存在未知投递结果时禁止交接发送权限。
+        """
+        rt = runtime()
+        return ScopeResolver(storage, rt.owner).bind_delivery(
+            endpoint_id,
+            host,
+            adapter,
+            operation_id=operation_id,
+            confirmation=confirmation,
+            expected_revision=expected_revision,
+        )
 
     @server.tool(annotations=write)
     @safe
@@ -643,9 +1109,12 @@ def build_server(
         operation_id: Identifier | None = None,
         allowlist_id: Identifier | None = None,
     ) -> dict[str, Any]:
-        """OOC growth review, approval and rollback; baseline remains unchanged."""
+        """OOC growth review, approval and rollback; baseline remains unchanged.
+
+        OOC 成长审查、批准及回滚，角色基线保持不变。
+        """
         rt = runtime()
-        with storage.transaction():
+        with rt.storage.transaction():
             session = rt.knowledge.scope(session_id, ooc=True)
             assert session.character_id is not None
             cid = session.character_id
@@ -689,11 +1158,11 @@ def build_server(
                     return growth.approve(cid, target_id, explicit=True)
                 if action == "rollback":
                     return growth.rollback(cid, target_id)
-                candidate = storage.get(rt.owner, "growth_candidate", target_id)
+                candidate = rt.storage.get(rt.owner, "growth_candidate", target_id)
                 if not candidate or candidate["status"] != "pending":
                     raise ValueError("Pending candidate required")
                 candidate["status"] = "rejected"
-                storage.put(rt.owner, "growth_candidate", target_id, candidate)
+                rt.storage.put(rt.owner, "growth_candidate", target_id, candidate)
                 return {"candidate_id": target_id, "status": "rejected"}
 
             return ops.execute(
@@ -718,9 +1187,12 @@ def build_server(
         allowlist_id: Identifier | None = None,
         confirmation_evidence: list[Identifier] | None = None,
     ) -> dict[str, Any]:
-        """Media perception and visual candidates; only explicit OOC confirmation grants trust."""
+        """Media perception and visual candidates; only explicit OOC confirmation grants trust.
+
+        媒体感知及视觉候选；只有显式 OOC 确认能授予相应信任。
+        """
         rt = runtime()
-        with storage.transaction():
+        with rt.storage.transaction():
             session = rt.knowledge.scope(session_id, ooc=action in ("confirm", "reject"))
             assert session.character_id is not None
             cid, ops = session.character_id, rt.knowledge.operations(session.character_id)
@@ -770,7 +1242,7 @@ def build_server(
                     collection="visual_prototype",
                     session_id=session_id,
                 )
-                record = storage.get(rt.owner, "visual_prototype", target_id)
+                record = rt.storage.get(rt.owner, "visual_prototype", target_id)
                 assert record is not None
                 if action == "confirm":
                     evidence = rt.knowledge.evidence(cid, confirmation_evidence or [])
@@ -787,7 +1259,7 @@ def build_server(
                     )
                 else:
                     record["status"] = "rejected"
-                storage.put(rt.owner, "visual_prototype", target_id, record)
+                rt.storage.put(rt.owner, "visual_prototype", target_id, record)
                 return {"prototype_id": target_id, "status": record["status"]}
 
             return ops.execute(
@@ -803,7 +1275,10 @@ def build_server(
     def runtime_doctor(
         session_id: Identifier, maintenance_operation_id: Identifier | None = None
     ) -> dict[str, Any]:
-        """Inspect scoped integrity statistics without exposing private record bodies."""
+        """Inspect scoped integrity statistics without exposing private record bodies.
+
+        检查作用域完整性统计，不暴露私人记录正文。
+        """
         rt = runtime()
         session = rt.knowledge.scope(session_id)
         assert session.character_id is not None
@@ -818,7 +1293,10 @@ def build_server(
     @server.tool(annotations=read)
     @safe
     def context_explain(session_id: Identifier, query: str = "") -> dict[str, Any]:
-        """Authenticated context budget/fingerprint statistics, without private content."""
+        """Authenticated context budget/fingerprint statistics, without private content.
+
+        认证后的上下文预算及指纹统计，不包含私人正文。
+        """
         return dict(
             runtime().context(session_id, query).get("context_diagnostics", {"active": False})
         )
@@ -831,7 +1309,10 @@ def build_server(
         include_companion: bool = False,
         include_private_knowledge: bool = False,
     ) -> dict[str, Any]:
-        """Export portable JSON. Include private character memory ONLY on explicit user opt-in."""
+        """Export portable JSON. Include private character memory ONLY on explicit user opt-in.
+
+        导出可迁移 JSON；携带私人角色记忆必须获得用户显式选择。
+        """
         return export_character(
             runtime(),
             character_id,
@@ -847,13 +1328,16 @@ def build_server(
         operation_id: Identifier | None = None,
         sensitive_confirmation: str = "",
     ) -> dict[str, Any]:
-        """Import conservatively once; evidence and grants never acquire trust through packages."""
+        """Import conservatively once; evidence and grants never acquire trust through packages.
+
+        保守幂等导入；包不能让证据或授权自动提高信任。
+        """
         operation = require_operation(operation_id)
         rt = runtime()
         payload = package.model_dump(mode="json")
         digest = fingerprint({"package": payload, "consent": sensitive_confirmation})
-        with storage.transaction():
-            receipt = storage.get(rt.owner, "import_receipt", operation)
+        with rt.storage.transaction():
+            receipt = rt.storage.get(rt.owner, "import_receipt", operation)
             if receipt:
                 if receipt["fingerprint"] != digest:
                     raise ValueError("Import operation ID was reused for different data")
@@ -861,7 +1345,7 @@ def build_server(
             definition = import_character(
                 rt, payload, sensitive_confirmation=sensitive_confirmation
             )
-            storage.put(
+            rt.storage.put(
                 rt.owner,
                 "import_receipt",
                 operation,
@@ -880,6 +1364,11 @@ def build_server(
 
 
 def http_app(server: MCPServer[Any], host: str = "127.0.0.1", port: int = 8765) -> Starlette:
+    """Build the authenticated HTTP resource server without publishing it.
+
+    构建带认证的 HTTP 资源服务，不执行公开部署。
+    """
+
     if server.settings.auth is None:
         raise ValueError("HTTP transport requires authentication")
     resource = urlsplit(str(server.settings.auth.resource_server_url))

@@ -1,0 +1,71 @@
+{
+  "additionalProperties": false,
+  "description": "Host-model semantic units, never fragments obtained by splitting punctuation.\n\n宿主当前模型提供完整语义单元，绝不通过切句号获取气泡。",
+  "properties": {
+    "action": {
+      "default": "TEXT",
+      "enum": [
+        "TEXT",
+        "REPLY",
+        "REACTION",
+        "STICKER",
+        "SILENCE"
+      ],
+      "title": "Action",
+      "type": "string"
+    },
+    "parts": {
+      "items": {
+        "maxLength": 64000,
+        "minLength": 1,
+        "type": "string"
+      },
+      "maxItems": 20,
+      "title": "Parts",
+      "type": "array"
+    },
+    "content": {
+      "default": "",
+      "maxLength": 200,
+      "title": "Content",
+      "type": "string"
+    },
+    "fallback_text": {
+      "default": "",
+      "maxLength": 4000,
+      "title": "Fallback Text",
+      "type": "string"
+    },
+    "reply_target": {
+      "anyOf": [
+        {
+          "maxLength": 200,
+          "minLength": 1,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Reply Target"
+    },
+    "follow_up": {
+      "anyOf": [
+        {
+          "maxLength": 64000,
+          "minLength": 1,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Follow Up"
+    }
+  },
+  "title": "SemanticResponse",
+  "type": "object",
+  "$schema": "https://json-schema.org/draft/2020-12/schema"
+}

@@ -1,4 +1,7 @@
-"""Real local protocol health check; synthetic writes never enter the user store."""
+"""Real local protocol health check; synthetic writes never enter the user store.
+
+真实本地协议健康检查；合成写入不进入用户库。
+"""
 
 import os
 import sqlite3
@@ -18,7 +21,10 @@ from .storage import SQLiteStorage
 
 
 async def call(client: Client, tool: str, **arguments: Any) -> dict[str, Any]:
-    """Check protocol and business status without leaking returned private values."""
+    """Check protocol and business status without leaking returned private values.
+
+    验证协议及业务状态，不泄漏返回的私人值。
+    """
     result = await client.call_tool(tool, arguments)
     data = result.structured_content
     if result.is_error or not isinstance(data, dict) or not data.get("ok"):
@@ -28,6 +34,11 @@ async def call(client: Client, tool: str, **arguments: Any) -> dict[str, Any]:
 
 
 async def reject(client: Client, tool: str, **arguments: Any) -> None:
+    """Require a synthetic unsafe operation to fail instead of silently succeeding.
+
+    要求合成不安全操作明确失败，不能静默成功。
+    """
+
     result = await client.call_tool(tool, arguments)
     assert result.is_error or (
         result.structured_content and not result.structured_content.get("ok")
@@ -35,6 +46,11 @@ async def reject(client: Client, tool: str, **arguments: Any) -> None:
 
 
 async def remember(client: Client, session: str, operation: str, content: str) -> dict[str, Any]:
+    """Exercise evidence-backed persistence using only synthetic test input.
+
+    仅用合成输入验证有证据的持久化流程。
+    """
+
     raw = await call(
         client,
         "event_ingest",
@@ -66,6 +82,11 @@ async def remember(client: Client, session: str, operation: str, content: str) -
 
 
 async def protocol_check(client: Client) -> list[str]:
+    """Verify discovery and lifecycle over a real client-server transport.
+
+    通过真实客户端服务端传输验证发现及生命周期。
+    """
+
     names = {tool.name for tool in (await client.list_tools()).tools}
     assert {"event_ingest", "context_explain", "turn_commit", "proactive_prepare"} <= names
     a = (
@@ -212,6 +233,11 @@ async def protocol_check(client: Client) -> list[str]:
 
 async def check(data: Path) -> dict[str, Any]:
     # Installer preflight must never migrate the live database before activation.
+    """Run isolated protocol checks without modifying the user's character store.
+
+    运行隔离协议检查，不修改用户人物库。
+    """
+
     database = data / "runtime.sqlite3"
     with tempfile.TemporaryDirectory(prefix="agentcosplay-schema-check-") as scratch:
         snapshot = Path(scratch) / "runtime.sqlite3"

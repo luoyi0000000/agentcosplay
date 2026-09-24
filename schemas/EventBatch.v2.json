@@ -2,6 +2,7 @@
   "$defs": {
     "EventInput": {
       "additionalProperties": false,
+      "description": "Carry source identity and timestamp basis; observed time is not fabricated source time.\n\n携带源身份及时间依据；观察时间不能冒充源时间。",
       "properties": {
         "source_event_id": {
           "maxLength": 200,
@@ -31,7 +32,7 @@
           "type": "string"
         },
         "content": {
-          "maxLength": 4000,
+          "maxLength": 64000,
           "minLength": 1,
           "title": "Content",
           "type": "string"
@@ -40,6 +41,22 @@
           "format": "date-time",
           "title": "Timestamp",
           "type": "string"
+        },
+        "timestamp_basis": {
+          "anyOf": [
+            {
+              "enum": [
+                "source",
+                "observed"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Timestamp Basis"
         },
         "host": {
           "default": "",
@@ -94,6 +111,7 @@
     }
   },
   "additionalProperties": false,
+  "description": "Group bounded source inputs under one idempotent ingestion operation.\n\n将有界源输入归入一个幂等摄入操作。",
   "properties": {
     "operation_id": {
       "maxLength": 200,

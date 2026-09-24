@@ -1,4 +1,7 @@
-"""Cross-platform local entry point. No networking occurs unless serve HTTP is requested."""
+"""Cross-platform local entry point; HTTP serving requires an explicit request.
+
+跨平台本地入口；只有明确请求 HTTP 服务才启用监听。
+"""
 
 import argparse
 import asyncio
@@ -18,6 +21,10 @@ from .storage import SQLiteStorage
 
 
 def main() -> None:
+    """Run the local CLI; JSON pipes remain ASCII-safe under isolated Python.
+
+    执行本地 CLI；JSON 管道使用 ASCII 转义，兼容隔离 Python 的旧系统编码。
+    """
     parser = argparse.ArgumentParser(description="agentcosplay")
     sub = parser.add_subparsers(dest="command", required=True)
     serve = sub.add_parser("serve")
@@ -36,7 +43,9 @@ def main() -> None:
     if args.command == "doctor":
         from .health import check
 
-        print(json.dumps(asyncio.run(check(data)), ensure_ascii=False))
+        # -I ignores PYTHONUTF8; escaped JSON preserves Unicode on Windows pipes.
+        # -I 忽略 PYTHONUTF8；转义后的 JSON 可在 Windows 管道中无损传递中文。
+        print(json.dumps(asyncio.run(check(data))))
         return
     storage = SQLiteStorage(data / "runtime.sqlite3")
     try:
@@ -55,7 +64,7 @@ def main() -> None:
             rt = Runtime(storage, owner, providers=providers)
             while True:
                 for decision in tick(rt, args.character):
-                    print(json.dumps(decision, ensure_ascii=False), flush=True)
+                    print(json.dumps(decision), flush=True)
                 if args.once:
                     return
                 time.sleep(args.interval)

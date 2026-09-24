@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
-"""Complete, local-first installation. This bootstrap uses only Python's stdlib."""
+"""Complete local-first installation using only Python's standard library.
+
+仅使用 Python 标准库完成本地优先安装，不覆盖用户数据与未托管配置。
+"""
 
 from __future__ import annotations
 
@@ -7,6 +10,7 @@ import argparse
 import base64
 import contextlib
 import hashlib
+import hmac
 import json
 import os
 import re
@@ -197,17 +201,43 @@ def run(
     cwd: Path | None = None,
     env: dict[str, str] | None = None,
     input: str | None = None,
+    stage: str = "subprocess",
 ) -> str:
+    """Capture subprocess bytes; expose only a fixed stage, category and exit code.
+
+    捕获子进程原始字节，仅暴露固定阶段、错误类别和退出码，不输出私密内容。
+    """
+    if stage not in {"subprocess", "bootstrap", "dependencies", "health", "host-config"}:
+        raise ValueError("Unknown installation stage")
     result = subprocess.run(
-        command, cwd=cwd, env=env, input=input, capture_output=True, text=True, timeout=600
+        command,
+        cwd=cwd,
+        env=env,
+        input=None if input is None else input.encode("utf-8"),
+        capture_output=True,
+        timeout=600,
     )
     if result.returncode:
-        # Installer output can contain private index URLs or existing host secrets. Never echo it.
+        # Never decode/echo stderr: even decoding errors can expose private bytes.
+        # 不解码或回显 stderr；解码异常本身也可能暴露私密字节。
+        category = "subprocess-failure"
+        for signature, label in (
+            (b"UnicodeEncodeError", "encoding"),
+            (b"UnicodeDecodeError", "encoding"),
+            (b"ModuleNotFoundError", "missing-module"),
+            (b"PermissionError", "permission"),
+        ):
+            if signature in result.stderr:
+                category = label
+                break
         raise RuntimeError(
-            f"Step failed ({Path(command[0]).name}, exit {result.returncode}); "
+            f"Step failed ({stage}, {category}, exit {result.returncode}); "
             "check dependencies, permissions and host config"
         )
-    return result.stdout
+    try:
+        return result.stdout.decode("utf-8")
+    except UnicodeDecodeError:
+        raise RuntimeError(f"Step failed ({stage}, invalid-output-encoding)") from None
 
 
 def build_release(root: Path, source: Path) -> Path:
@@ -237,9 +267,12 @@ def build_release(root: Path, source: Path) -> Path:
         if not uv:
             bootstrap = root / "bootstrap"
             if not python_at(bootstrap).exists():
-                run([sys.executable, "-m", "venv", str(bootstrap / ".venv")])
+                run([sys.executable, "-m", "venv", str(bootstrap / ".venv")], stage="bootstrap")
             if not (python_at(bootstrap).parent / ("uv.exe" if os.name == "nt" else "uv")).exists():
-                run([str(python_at(bootstrap)), "-m", "pip", "install", "uv==0.11.7"])
+                run(
+                    [str(python_at(bootstrap)), "-m", "pip", "install", "uv==0.11.7"],
+                    stage="bootstrap",
+                )
             uv = str(python_at(bootstrap).parent / ("uv.exe" if os.name == "nt" else "uv"))
         clean_env = {
             k: v
@@ -251,6 +284,7 @@ def build_release(root: Path, source: Path) -> Path:
             [uv, "sync", "--locked", "--no-dev", "--python", sys.executable],
             cwd=release,
             env=clean_env,
+            stage="dependencies",
         )
         return release
     except BaseException:
@@ -267,6 +301,7 @@ def health(release: Path, data: Path, owner: str) -> dict[str, Any]:
             [str(python_at(release)), "-I", "-m", "character_runtime", "doctor"],
             cwd=release,
             env=env,
+            stage="health",
         )
     )
     if not value.get("ok"):
@@ -301,6 +336,7 @@ def config_text(
         [str(python_at(release)), "-I", "-m", "character_runtime.host_config"],
         cwd=release,
         input=json.dumps({"host": host, "text": text, "server": server, "remove": remove}),
+        stage="host-config",
     )
     return json.loads(value)["text"]
 
@@ -499,8 +535,18 @@ def uninstall(root: Path) -> dict[str, Any]:
 
 
 def connect(
-    root: Path, host: str, host_dir: Path | None, transport: str, port: int
+    root: Path,
+    host: str,
+    host_dir: Path | None,
+    transport: str,
+    port: int,
+    native_hermes: bool = False,
+    native_astrbot: bool = False,
 ) -> dict[str, Any]:
+    if native_hermes and (host != "hermes" or transport != "http"):
+        raise ValueError("Native Hermes requires --host hermes --transport http")
+    if native_astrbot and (host != "astrbot" or transport != "http"):
+        raise ValueError("Native AstrBot requires --host astrbot --transport http")
     old = state_of(root)
     if not old or old.get("uninstalled") or host in {"auto", "generic"}:
         raise ValueError("Connect requires an installed Runtime and explicit supported --host")
@@ -525,6 +571,15 @@ def connect(
                     "Authorization": "Bearer " + value.decode().strip()
                 },
             }
+            if native_hermes or native_astrbot:
+                # Middleware failure or plugin disable must not expose owner-level MCP tools.
+                # 中间件失败或插件停用时，MCP 发现凭据仍不能执行 Owner 工具。
+                credential = hmac.new(
+                    value.decode().strip().encode(),
+                    b"agentcosplay:model-discovery:v1",
+                    hashlib.sha256,
+                ).hexdigest()
+                server["headers"]["Authorization"] = "Bearer " + credential
             state["http_port"] = port
         if host == "astrbot":
             server["active"] = True
@@ -574,6 +629,8 @@ def main() -> None:
     parser.add_argument("--host-dir", type=Path)
     parser.add_argument("--transport", choices=["stdio", "http"], default="stdio")
     parser.add_argument("--port", type=int, default=8765)
+    parser.add_argument("--native-hermes", action="store_true")
+    parser.add_argument("--native-astrbot", action="store_true")
     args = parser.parse_args()
     root = args.install_root.expanduser().resolve()
     try:
@@ -606,7 +663,15 @@ def main() -> None:
                     )
                 result = install(root, SOURCE, data, owner, host, args.host_dir)
             elif args.action == "connect":
-                result = connect(root, args.host, args.host_dir, args.transport, args.port)
+                result = connect(
+                    root,
+                    args.host,
+                    args.host_dir,
+                    args.transport,
+                    args.port,
+                    args.native_hermes,
+                    args.native_astrbot,
+                )
             elif args.action == "rollback":
                 result = rollback(root)
             elif args.action == "uninstall":
@@ -628,7 +693,9 @@ def main() -> None:
                 result = health(
                     release, validate_data_path(Path(old["data_dir"]), [root]), old["owner"]
                 )
-        print(json.dumps(result, ensure_ascii=False))
+        # Machine-readable output must survive non-UTF-8 redirected consoles.
+        # 机器可读输出必须兼容非 UTF-8 的重定向控制台，中文由 JSON 转义保留。
+        print(json.dumps(result))
     except (ValueError, RuntimeError, OSError, subprocess.SubprocessError) as error:
         # Exception details can contain host configuration or secrets; keep CLI output bounded.
         print(

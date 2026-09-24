@@ -1,0 +1,6 @@
+{
+  "runtime_url": {"description": "Shared Runtime MCP URL / 共享 Runtime 地址", "type": "string", "default": "http://127.0.0.1:8765/mcp"},
+  "token_file": {"description": "Absolute local credential file / 本地凭据文件绝对路径", "type": "string", "default": ""},
+  "host_id": {"description": "Verified Host binding ID / 已验证宿主绑定标识", "type": "string", "default": "astrbot"},
+  "routes_json": {"description": "Explicit routes JSON: platform_id, session_id, kind, runtime_platform, endpoint_id / 显式路由 JSON", "type": "text", "default": "[]"}
+}

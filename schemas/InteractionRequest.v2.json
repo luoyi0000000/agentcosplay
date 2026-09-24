@@ -1,5 +1,6 @@
 {
   "additionalProperties": false,
+  "description": "Describe preferred behavior and capabilities without granting delivery authority.\n\n描述偏好行为及能力，不授予投递权限。",
   "properties": {
     "preferred": {
       "default": "TEXT",

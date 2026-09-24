@@ -28,5 +28,12 @@ jobs:
       - run: uv run --locked python -m scripts.schemas --check
       - run: uv run --locked python -m scripts.check_migration
       - run: uv run --locked python -m scripts.check_runtime
+      - run: uv run --locked python -m scripts.check_scope
+      - run: uv run --locked python -m scripts.check_expression
+      - run: uv run --locked python -m scripts.check_conversation
+      - run: uv run --locked python -m scripts.check_hermes
+      - run: uv run --locked python -m scripts.check_astrbot
+      - run: uv run --locked python -m scripts.check_lifecycle
+      - run: uv run --locked python -m scripts.check_affect
       - run: uv build --build-constraints build-constraints.txt
       - run: uv run --locked python -m scripts.check_installation

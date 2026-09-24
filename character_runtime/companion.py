@@ -1,4 +1,7 @@
-"""Transactional companion state, conservative offline simulation, and bounded views."""
+"""Transactional companion state, conservative offline simulation, and bounded views.
+
+事务化陪伴状态、保守离线模拟与有界视图。
+"""
 
 from collections.abc import Callable, Iterable
 from datetime import datetime, timedelta
@@ -13,8 +16,8 @@ from .companion_models import (
     Decision,
     Goal,
     Habit,
+    LegacyMoodWriteUnsupported,
     LifeState,
-    Mood,
     Settings,
     Topic,
 )
@@ -25,6 +28,11 @@ from .storage import Storage
 
 
 class Companion:
+    """Maintain scoped life and proactive state; legacy Mood is only a read-only archive.
+
+    维护作用域内生活与主动状态；旧 Mood 仅为只读档案。
+    """
+
     def __init__(
         self,
         storage: Storage,
@@ -37,6 +45,11 @@ class Companion:
         self.storage, self.owner, self.characters, self.clock = storage, owner, characters, clock
 
     def get(self, character_id: str) -> CompanionState:
+        """Read companion state preserving opaque legacy fields and safe defaults.
+
+        读取陪伴状态，保留不透明旧字段及安全默认值。
+        """
+
         self.characters.get(character_id)
         raw = self.storage.get(self.owner, "companion", character_id)
         if raw is not None:
@@ -48,7 +61,6 @@ class Companion:
         return CompanionState(
             character_id=character_id,
             last_advanced_at=instant,
-            mood=Mood(updated_at=instant),
             life=LifeState(updated_at=instant),
         )
 
@@ -79,9 +91,27 @@ class Companion:
             ):
                 raise ValueError("Companion evidence requires direct owned RawEvents")
 
-    def update(self, character_id: str, update: CompanionUpdate) -> CompanionState:
+    def update(
+        self, character_id: str, update: CompanionUpdate, *, endpoint_admin: bool = False
+    ) -> CompanionState:
+        """Update audience state; endpoint policy changes require the trusted admin bridge.
+
+        更新当前受众状态；Endpoint 策略配置仅由可信管理入口授权。
+        """
         update = CompanionUpdate.model_validate(update.model_dump())
+        if update.mood is not None:
+            raise LegacyMoodWriteUnsupported()
         with self.storage.transaction():
+            actor = getattr(self.storage, "actor", None)
+            if (
+                actor
+                and not actor.private_context_allowed
+                and not endpoint_admin
+                and update.settings
+            ):
+                # An ordinary group participant cannot control endpoint policy.
+                # 普通群成员不能通过个人 OOC 操作管理 Endpoint 设置。
+                raise ValueError("Endpoint settings require owner administration")
             state = self.advance(character_id)
             instant = self.clock()
             if update.settings:
@@ -94,25 +124,6 @@ class Companion:
                     state.life = LifeState(updated_at=instant)
                 # Turning simulation on starts here; disabled time must never be caught up.
                 state.last_advanced_at = max(state.last_advanced_at, instant)
-            if update.mood:
-                mood = update.mood
-                self._evidence(character_id, mood.evidence_ids)
-                # At most one small influence per minute, even when a host retries updates.
-                elapsed = (
-                    (instant - state.mood.influenced_at).total_seconds()
-                    if (state.mood.influenced_at)
-                    else 60
-                )
-                if elapsed >= 60:
-                    intensity = min(mood.intensity, state.mood.intensity + 0.25)
-                    state.mood = Mood(
-                        label=mood.label,
-                        intensity=intensity,
-                        reason=mood.reason,
-                        evidence_ids=mood.evidence_ids,
-                        updated_at=instant,
-                        influenced_at=instant,
-                    )
             if update.goal:
                 self._evidence(character_id, update.goal.evidence_ids)
                 old = next((g for g in state.goals if g.id == update.goal.id), None)
@@ -188,6 +199,11 @@ class Companion:
             return state
 
     def observe(self, character_id: str, observation: Observation) -> None:
+        """Accept validated provider observations under enabled perception settings.
+
+        只在对应感知设置开启时接受有效来源观察。
+        """
+
         observation = Observation.model_validate(observation.model_dump())
         check_content(observation.model_dump_json())
         with self.storage.transaction():
@@ -201,7 +217,10 @@ class Companion:
             self._save(state)
 
     def refresh(self, character_id: str, providers: Iterable[Provider]) -> dict[str, str]:
-        """A missing/failed optional collector must not stop role conversation."""
+        """A missing/failed optional collector must not stop role conversation.
+
+        缺失或失败的可选采集器不能阻止角色对话。
+        """
         outcomes = {}
         for index, provider in enumerate(providers):
             try:
@@ -217,6 +236,11 @@ class Companion:
         return outcomes
 
     def environment(self, state: CompanionState) -> dict[str, dict[str, Any]]:
+        """Project fresh enabled observations without treating stale input as current reality.
+
+        只投影新鲜且已启用的观察，不把过期输入当作当前现实。
+        """
+
         instant = self.clock()
         result = {}
         for kind, observation in state.observations.items():
@@ -232,16 +256,17 @@ class Companion:
         return result
 
     def advance(self, character_id: str) -> CompanionState:
+        """Advance opted-in life simulation without updating the legacy Mood archive.
+
+        推进已开启的生活模拟，不更新旧 Mood 档案。
+        """
+
         with self.storage.transaction():
             state = self.get(character_id)
             instant = self.clock()
             seconds = max(0, (instant - state.last_advanced_at).total_seconds())
-            mood_hours = max(0, (instant - state.mood.updated_at).total_seconds()) / 3600
-            state.mood.intensity *= 0.5 ** (mood_hours / 6)
-            state.mood.updated_at = max(instant, state.mood.updated_at)
-            if state.mood.intensity < 0.01:
-                state.mood.label, state.mood.intensity = "neutral", 0
-                state.mood.reason, state.mood.evidence_ids = "", []
+            # Legacy Mood is an archive: no decay, adaptation or current-state projection.
+            # 旧 Mood 是档案：不衰减、不适应，也不进入当前状态投影。
             if state.settings.life_simulation:
                 hour = instant.astimezone(ZoneInfo(state.settings.timezone)).hour
                 environment = self.environment(state)
@@ -299,7 +324,10 @@ class Companion:
             return state
 
     def drain_simulated_memories(self, character_id: str) -> list[Candidate]:
-        """Call with memory.store in one outer transaction to make the transfer atomic."""
+        """Call with memory.store in one outer transaction to make the transfer atomic.
+
+        与 memory.store 放在同一个外层事务，保证转移原子性。
+        """
         with self.storage.transaction():
             state = self.get(character_id)
             events = state.simulated_memories
@@ -308,6 +336,11 @@ class Companion:
             return events
 
     def context(self, character_id: str, query: str = "") -> dict[str, Any]:
+        """Project current companion context with the legacy Mood archive excluded.
+
+        投影当前陪伴上下文，排除旧 Mood 历史档案。
+        """
+
         state = self.advance(character_id)
         words = query.casefold().split()[:20]
 
@@ -340,9 +373,7 @@ class Companion:
                 result.append(data)
             return result
 
-        mood = state.mood.model_dump(mode="json", exclude={"evidence_ids"})
         return {
-            "mood": mood,
             "goals": select(g for g in state.goals if g.status == "active"),
             "habits": select(h for h in state.habits if h.established),
             "unfinished_topics": select(t for t in state.topics if t.status == "open"),
@@ -352,6 +383,11 @@ class Companion:
         }
 
     def record_activity(self, character_id: str) -> None:
+        """Record current user activity for proactive cooldown decisions.
+
+        记录用户当前活动，用于主动联系冷却判断。
+        """
+
         with self.storage.transaction():
             state = self.get(character_id)
             instant = self.clock()
@@ -360,16 +396,31 @@ class Companion:
             self._save(state)
 
     def decide(self, character_id: str, reservation_id: str | None = None) -> Decision:
+        """Delegate proactive reservations to the single decision engine.
+
+        将主动意图预留交给唯一决策引擎。
+        """
+
         from .proactive import decide
 
         return decide(self, character_id, reservation_id)
 
     def prepare(self, character_id: str, decision_id: str) -> Decision:
+        """Claim a reserved generation once before asking the Host model.
+
+        请求宿主模型前，只领取一次预留生成机会。
+        """
+
         from .proactive import prepare
 
         return prepare(self, character_id, decision_id)
 
     def delivery(self, character_id: str, decision_id: str, claim_id: str) -> Decision:
+        """Recheck send gates and claim a single delivery attempt.
+
+        重查发送门，并领取一次投递尝试。
+        """
+
         from .proactive import delivery
 
         return delivery(self, character_id, decision_id, claim_id)
@@ -381,6 +432,11 @@ class Companion:
         delivered: bool | None,
         claim_id: str | None = None,
     ) -> dict[str, Any]:
+        """Record delivered, failed or unknown outcomes without blind retries.
+
+        记录已送达、明确失败或未知结果，不盲目重试。
+        """
+
         from .proactive import ack
 
         return ack(self, character_id, decision_id, delivered, claim_id)

@@ -2,6 +2,7 @@
   "$defs": {
     "Candidate": {
       "additionalProperties": false,
+      "description": "Bound a proposed memory summary; confidence does not establish factual authority.\n\n约束记忆摘要候选；置信度不建立事实权威。",
       "properties": {
         "content": {
           "maxLength": 4000,
@@ -64,6 +65,7 @@
     },
     "Decision": {
       "additionalProperties": false,
+      "description": "Persist a reserved intent and delivery state, not evidence that a message was sent.\n\n保存预留意图及投递状态，不证明消息已经发送。",
       "properties": {
         "id": {
           "maxLength": 200,
@@ -168,6 +170,7 @@
     },
     "Goal": {
       "additionalProperties": false,
+      "description": "Track configured intent and progress; a plan is not evidence of a completed event.\n\n记录配置意图及进度；计划不是已完成事件的证据。",
       "properties": {
         "id": {
           "maxLength": 200,
@@ -287,6 +290,7 @@
     },
     "Habit": {
       "additionalProperties": false,
+      "description": "Track gradual habit support separately from immutable character identity.\n\n记录渐进习惯支持，与不可变角色身份分离。",
       "properties": {
         "id": {
           "maxLength": 200,
@@ -373,8 +377,10 @@
       "title": "Habit",
       "type": "object"
     },
+    "JsonValue": {},
     "LifeState": {
       "additionalProperties": false,
+      "description": "Track simulated activity timing; simulation must not become shared experience.\n\n记录模拟活动时序；模拟不能变成用户共同经历。",
       "properties": {
         "activity": {
           "default": "idle",
@@ -460,62 +466,9 @@
       "title": "LifeState",
       "type": "object"
     },
-    "Mood": {
-      "additionalProperties": false,
-      "properties": {
-        "label": {
-          "default": "neutral",
-          "maxLength": 80,
-          "title": "Label",
-          "type": "string"
-        },
-        "intensity": {
-          "default": 0,
-          "maximum": 1,
-          "minimum": 0,
-          "title": "Intensity",
-          "type": "number"
-        },
-        "reason": {
-          "default": "",
-          "maxLength": 500,
-          "title": "Reason",
-          "type": "string"
-        },
-        "evidence_ids": {
-          "items": {
-            "maxLength": 200,
-            "minLength": 1,
-            "type": "string"
-          },
-          "maxItems": 5,
-          "title": "Evidence Ids",
-          "type": "array"
-        },
-        "updated_at": {
-          "format": "date-time",
-          "title": "Updated At",
-          "type": "string"
-        },
-        "influenced_at": {
-          "anyOf": [
-            {
-              "format": "date-time",
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Influenced At"
-        }
-      },
-      "title": "Mood",
-      "type": "object"
-    },
     "Observation": {
       "additionalProperties": false,
+      "description": "Keep observation, fetch and expiry times distinct with bounded freshness.\n\n区分观察、获取及到期时间，限制新鲜度。",
       "properties": {
         "schema_version": {
           "const": 1,
@@ -629,6 +582,7 @@
     },
     "Settings": {
       "additionalProperties": false,
+      "description": "Keep explicit opt-in controls and proactive quiet/rate limits.\n\n保存显式启用开关，以及主动联系的安静时段和频率限制。",
       "properties": {
         "proactive_contact": {
           "default": false,
@@ -713,6 +667,7 @@
     },
     "Topic": {
       "additionalProperties": false,
+      "description": "Keep opted-in follow-up relevance and cooldown state.\n\n保存已允许跟进的话题相关性及冷却状态。",
       "properties": {
         "evidence_ids": {
           "items": {
@@ -789,7 +744,8 @@
       "type": "object"
     }
   },
-  "additionalProperties": false,
+  "additionalProperties": true,
+  "description": "Current life state plus an opaque historical Mood archive.\n\n当前生活状态附带不透明的历史 Mood 档案；未知字段往返保留，不参与当前决策。",
   "properties": {
     "schema_version": {
       "const": 1,
@@ -813,7 +769,12 @@
       "$ref": "#/$defs/Settings"
     },
     "mood": {
-      "$ref": "#/$defs/Mood"
+      "additionalProperties": {
+        "$ref": "#/$defs/JsonValue"
+      },
+      "description": "Read-only legacy archive",
+      "title": "Mood",
+      "type": "object"
     },
     "goals": {
       "items": {

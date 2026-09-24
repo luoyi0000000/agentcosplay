@@ -20,6 +20,72 @@ from character_runtime.operations import Operations
 from character_runtime.storage import SQLiteStorage
 
 
+def scope_migration(root: Path) -> None:
+    """Retain legacy private life byte-for-byte; public life starts clean.
+
+    原样保留旧私有生活记录；新公共生活不能继承私有内容或未知字段。
+    """
+    from character_runtime.models import CharacterDefinition
+    from character_runtime.runtime import Runtime
+
+    path = root / "scope-v2.sqlite3"
+    store = SQLiteStorage(path)
+    runtime = Runtime(store, "owner")
+    cid = runtime.characters.create(CharacterDefinition(name="migration")).id
+    private = runtime.companion.get(cid).model_dump(mode="json")
+    private["life"]["reason"] = "private-calendar-sentinel"
+    private["unknown_extension"] = {"keep": [1, 2, 3]}
+    store.put("owner", "companion", cid, private)
+    store.delete("owner", "character_companion", cid)
+    store.close()
+    connection = sqlite3.connect(path)
+    connection.execute("PRAGMA user_version=2")
+    connection.commit()
+    original = connection.execute(
+        "SELECT value FROM records WHERE collection='companion'"
+    ).fetchone()[0]
+    rows = sqlite3.connect(path)
+    before_rows = rows.execute("SELECT * FROM records ORDER BY owner, collection, key").fetchall()
+    rows.close()
+    connection.close()
+    original_migrate = SQLiteStorage._migrate_scopes
+
+    def interrupted(store, version):
+        original_migrate(store, version)
+        raise RuntimeError("synthetic interruption after scope migration writes")
+
+    with patch.object(SQLiteStorage, "_migrate_scopes", interrupted):
+        rejected(RuntimeError, lambda: SQLiteStorage(path))
+    connection = sqlite3.connect(path)
+    assert connection.execute("PRAGMA user_version").fetchone()[0] == 2
+    assert (
+        connection.execute("SELECT * FROM records ORDER BY owner, collection, key").fetchall()
+        == before_rows
+    )
+    connection.close()
+    migrated = SQLiteStorage(path)
+    try:
+        assert migrated.migration_backup is not None, "Scope migration needs a private backup"
+        public = migrated.get("owner", "character_companion", cid)
+        assert public and public["life"]["reason"] == "" and public["goals"] == []
+        assert "private-calendar-sentinel" not in json.dumps(public)
+        assert migrated.get("owner", "companion", cid) == private
+        assert migrated.get("owner", "migration_original", "v2:companion:" + cid) == {
+            "raw_json": original
+        }
+        assert migrated.get("owner", "migration_warning", "v2:companion:" + cid)
+        backup = sqlite3.connect(migrated.migration_backup)
+        assert backup.execute("PRAGMA user_version").fetchone()[0] == 2
+        assert (
+            backup.execute("SELECT value FROM records WHERE collection='companion'").fetchone()[0]
+            == original
+        )
+        backup.close()
+    finally:
+        migrated.close()
+    print("PASS scope migration: private originals, unknown fields, backup, clean public state")
+
+
 def rejected(error: type[Exception], action: Callable[[], Any]) -> None:
     try:
         action()
@@ -104,7 +170,7 @@ def migration(root: Path) -> None:
         assert (
             migrated_state and not {"known_characters", "shared_world_id"} & migrated_state.keys()
         )
-        assert len(storage.list("owner", "migration_warning")) == 4
+        assert len(storage.list("owner", "migration_warning")) == 5
         for owner, character, count in [("owner", "a", 1), ("owner", "b", 0), ("other", "a", 0)]:
             assert (
                 len(
@@ -126,7 +192,10 @@ def migration(root: Path) -> None:
         assert storage.migration_backup is None
         connection = sqlite3.connect(path)
         try:
-            assert connection.execute("PRAGMA user_version").fetchone()[0] == 2
+            assert (
+                connection.execute("PRAGMA user_version").fetchone()[0]
+                == SQLiteStorage.SCHEMA_VERSION
+            )
             assert (
                 connection.execute(
                     "SELECT value FROM records WHERE collection='memory' AND key='broken'"
@@ -254,6 +323,7 @@ def main() -> None:
     with TemporaryDirectory(prefix="agentcosplay-migration-") as temporary:
         root = Path(temporary)
         migration(root)
+        scope_migration(root)
         operations(root)
 
 

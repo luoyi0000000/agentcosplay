@@ -2,6 +2,7 @@
   "$defs": {
     "Evolution": {
       "additionalProperties": false,
+      "description": "Preserve legacy evolution evidence references separately from approved Growth versions.\n\n保存旧演化的证据引用，与已批准的 Growth 版本分离。",
       "properties": {
         "axis": {
           "enum": [
@@ -64,6 +65,7 @@
     },
     "Relationship": {
       "additionalProperties": false,
+      "description": "Bound relationship dimensions and explicit interaction boundaries.\n\n约束关系维度及显式互动边界。",
       "properties": {
         "stage": {
           "default": "stranger",
@@ -124,6 +126,7 @@
     }
   },
   "additionalProperties": false,
+  "description": "Retain baseline compatibility state; domain engines own their canonical projections.\n\n保留基线兼容状态；各领域引擎管理对应规范投影。",
   "properties": {
     "character_id": {
       "maxLength": 200,

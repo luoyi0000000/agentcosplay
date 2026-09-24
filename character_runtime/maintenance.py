@@ -1,4 +1,7 @@
-"""One durable local maintenance cycle, callable by any host scheduler."""
+"""One durable local maintenance cycle, callable by any host scheduler.
+
+任何宿主调度器均可调用的唯一持久本地维护周期。
+"""
 
 from typing import TYPE_CHECKING, Any
 
@@ -11,6 +14,11 @@ if TYPE_CHECKING:
 
 
 def run(runtime: "Runtime", character_id: str, operation_id: str) -> dict[str, Any]:
+    """Execute a durable maintenance operation using existing idempotent receipts.
+
+    使用现有幂等回执执行持久维护操作。
+    """
+
     k = runtime.knowledge
     ops = k.operations(character_id)
     job_id = fingerprint(["maintenance", operation_id])

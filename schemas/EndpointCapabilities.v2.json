@@ -1,0 +1,46 @@
+{
+  "additionalProperties": false,
+  "description": "Trusted adapter capabilities, independent of identity and delivery authority.\n\n可信适配器能力；能力不等于身份，也不等于发送授权。",
+  "properties": {
+    "multiple_messages": {
+      "default": false,
+      "title": "Multiple Messages",
+      "type": "boolean"
+    },
+    "typing": {
+      "default": false,
+      "title": "Typing",
+      "type": "boolean"
+    },
+    "reactions": {
+      "default": false,
+      "title": "Reactions",
+      "type": "boolean"
+    },
+    "stickers": {
+      "items": {
+        "maxLength": 200,
+        "minLength": 1,
+        "type": "string"
+      },
+      "maxItems": 100,
+      "title": "Stickers",
+      "type": "array"
+    },
+    "replies": {
+      "default": false,
+      "title": "Replies",
+      "type": "boolean"
+    },
+    "max_text_chars": {
+      "default": 64000,
+      "maximum": 64000,
+      "minimum": 1,
+      "title": "Max Text Chars",
+      "type": "integer"
+    }
+  },
+  "title": "EndpointCapabilities",
+  "type": "object",
+  "$schema": "https://json-schema.org/draft/2020-12/schema"
+}

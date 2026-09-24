@@ -3,6 +3,7 @@
     "JsonValue": {}
   },
   "additionalProperties": false,
+  "description": "Carry authority, sensitivity and budget metadata for one whole context fragment.\n\n携带一个完整上下文片段的权威、敏感性与预算元数据。",
   "properties": {
     "domain": {
       "enum": [
@@ -14,7 +15,9 @@
         "open_loops",
         "life",
         "perception",
-        "external_context"
+        "external_context",
+        "recent_turn_window",
+        "ambient_window"
       ],
       "title": "Domain",
       "type": "string"

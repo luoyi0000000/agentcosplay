@@ -1,5 +1,6 @@
 {
   "additionalProperties": false,
+  "description": "Keep observation, fetch and expiry times distinct with bounded freshness.\n\n区分观察、获取及到期时间，限制新鲜度。",
   "properties": {
     "schema_version": {
       "const": 1,

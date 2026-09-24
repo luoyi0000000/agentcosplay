@@ -6,6 +6,11 @@ from pathlib import Path
 
 from character_runtime.companion_models import CompanionState
 from character_runtime.context_models import CompiledContext, ContextBudget, ContextFragment
+from character_runtime.conversation_models import (
+    EndpointCapabilities,
+    InteractionPlan,
+    SemanticResponse,
+)
 from character_runtime.knowledge_models import (
     EventBatch,
     FactRecord,
@@ -13,6 +18,7 @@ from character_runtime.knowledge_models import (
     RawEvent,
     TurnProposal,
 )
+from character_runtime.lifecycle import HostCapabilities, TurnEnvelope
 from character_runtime.lifelike_models import (
     InteractionRequest,
     LifelikeState,
@@ -32,6 +38,8 @@ from character_runtime.persistence_models import (
     GenerationRequest,
     GrowthCandidate,
     GrowthVersion,
+    MemoryUseDecision,
+    ProtectedPayload,
     RecallRequest,
     RelationshipState,
 )
@@ -62,6 +70,11 @@ def main() -> None:
             f"{m.__name__}.v2": m
             for m in (
                 ContextBudget,
+                HostCapabilities,
+                TurnEnvelope,
+                EndpointCapabilities,
+                InteractionPlan,
+                SemanticResponse,
                 ContextFragment,
                 CompiledContext,
                 RawEvent,
@@ -81,6 +94,8 @@ def main() -> None:
                 GrowthVersion,
                 GenerationRequest,
                 RecallRequest,
+                MemoryUseDecision,
+                ProtectedPayload,
                 LifelikeState,
                 PerceptionObservation,
                 VisualPrototype,

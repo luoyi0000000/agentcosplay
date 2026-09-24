@@ -1,0 +1,106 @@
+{
+  "additionalProperties": false,
+  "description": "Declared capability is not authority; absent support stays false.\n\n能力声明不授予权限；未声明的能力默认不可用。",
+  "properties": {
+    "multiple_messages": {
+      "default": false,
+      "title": "Multiple Messages",
+      "type": "boolean"
+    },
+    "typing": {
+      "default": false,
+      "title": "Typing",
+      "type": "boolean"
+    },
+    "reactions": {
+      "default": false,
+      "title": "Reactions",
+      "type": "boolean"
+    },
+    "stickers": {
+      "items": {
+        "maxLength": 200,
+        "minLength": 1,
+        "type": "string"
+      },
+      "maxItems": 100,
+      "title": "Stickers",
+      "type": "array"
+    },
+    "replies": {
+      "default": false,
+      "title": "Replies",
+      "type": "boolean"
+    },
+    "max_text_chars": {
+      "default": 64000,
+      "maximum": 64000,
+      "minimum": 1,
+      "title": "Max Text Chars",
+      "type": "integer"
+    },
+    "pre_generation": {
+      "default": false,
+      "title": "Pre Generation",
+      "type": "boolean"
+    },
+    "post_generation": {
+      "default": false,
+      "title": "Post Generation",
+      "type": "boolean"
+    },
+    "conversation_history": {
+      "default": false,
+      "title": "Conversation History",
+      "type": "boolean"
+    },
+    "participant_identity": {
+      "default": false,
+      "title": "Participant Identity",
+      "type": "boolean"
+    },
+    "group_identity": {
+      "default": false,
+      "title": "Group Identity",
+      "type": "boolean"
+    },
+    "reply_topology": {
+      "default": false,
+      "title": "Reply Topology",
+      "type": "boolean"
+    },
+    "mentions": {
+      "default": false,
+      "title": "Mentions",
+      "type": "boolean"
+    },
+    "ambient_messages": {
+      "default": false,
+      "title": "Ambient Messages",
+      "type": "boolean"
+    },
+    "tool_events": {
+      "default": false,
+      "title": "Tool Events",
+      "type": "boolean"
+    },
+    "voice_output": {
+      "default": false,
+      "title": "Voice Output",
+      "type": "boolean"
+    },
+    "message_edit": {
+      "default": false,
+      "title": "Message Edit",
+      "type": "boolean"
+    },
+    "reliable_delivery_ack": {
+      "default": false,
+      "title": "Reliable Delivery Ack",
+      "type": "boolean"
+    }
+  },
+  "title": "HostCapabilities",
+  "type": "object",
+  "$schema": "https://json-schema.org/draft/2020-12/schema"
+}

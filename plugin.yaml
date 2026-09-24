@@ -1,0 +1,12 @@
+name: agentcosplay
+version: 2.0.0
+description: Shared Character Runtime context through official Hermes hooks
+author: luoyi0000000
+provides_tools: []
+provides_hooks:
+  - pre_gateway_dispatch
+  - pre_llm_call
+  - post_llm_call
+  - on_session_end
+  - on_session_reset
+  - on_session_finalize

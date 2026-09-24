@@ -1,15 +1,23 @@
-"""Versioned, bounded companion state; never a second character definition."""
+"""Versioned, bounded companion state; never a second character definition.
+
+版本化、有界陪伴状态；不构成第二份角色定义。
+"""
 
 from typing import Literal, Self
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from pydantic import AwareDatetime, Field, model_validator
+from pydantic import AwareDatetime, ConfigDict, Field, JsonValue, model_validator
 
 from .models import Candidate, Identifier, Model, Score, new_id, now
 from .providers import Activity, Observation
 
 
 class Settings(Model):
+    """Keep explicit opt-in controls and proactive quiet/rate limits.
+
+    保存显式启用开关，以及主动联系的安静时段和频率限制。
+    """
+
     proactive_contact: bool = False
     schedule_awareness: bool = False
     weather_awareness: bool = False
@@ -25,6 +33,11 @@ class Settings(Model):
 
     @model_validator(mode="after")
     def valid_timezone(self) -> Self:
+        """Reject unavailable timezone rules instead of silently using a different zone.
+
+        拒绝不可用的时区规则，不静默换用其他时区。
+        """
+
         try:
             ZoneInfo(self.timezone)
         except (ZoneInfoNotFoundError, ValueError) as error:
@@ -33,6 +46,11 @@ class Settings(Model):
 
 
 class SettingsUpdate(Model):
+    """Patch only supplied owner settings, preserving unspecified values.
+
+    只修改提供的 Owner 设置，保留未指定值。
+    """
+
     proactive_contact: bool | None = None
     schedule_awareness: bool | None = None
     weather_awareness: bool | None = None
@@ -48,6 +66,11 @@ class SettingsUpdate(Model):
 
 
 class MoodUpdate(Model):
+    """Legacy request shape, retained only to return an explicit compatibility error.
+
+    旧请求形状仅用于明确返回兼容错误，不再参与情绪写入。
+    """
+
     label: str = Field(min_length=1, max_length=80)
     intensity: Score
     reason: str = Field(min_length=1, max_length=500)
@@ -55,6 +78,11 @@ class MoodUpdate(Model):
 
 
 class Mood(Model):
+    """Legacy reader shape, never the current emotional authority.
+
+    旧版读取结构，不再作为当前情绪权威。
+    """
+
     label: str = Field(default="neutral", max_length=80)
     intensity: Score = 0
     reason: str = Field(default="", max_length=500)
@@ -64,6 +92,11 @@ class Mood(Model):
 
 
 class Goal(Model):
+    """Track configured intent and progress; a plan is not evidence of a completed event.
+
+    记录配置意图及进度；计划不是已完成事件的证据。
+    """
+
     id: Identifier = Field(default_factory=new_id)
     description: str = Field(min_length=1, max_length=500)
     source: Literal["user_explicit", "definition", "schedule", "growth", "simulated_life"] = (
@@ -82,6 +115,11 @@ class Goal(Model):
 
 
 class GoalUpdate(Model):
+    """Bound goal changes and their evidence references before applying them.
+
+    应用前约束目标变化及证据引用。
+    """
+
     id: Identifier
     description: str = Field(min_length=1, max_length=500)
     source: Literal["user_explicit", "definition", "schedule", "growth"] = "user_explicit"
@@ -95,6 +133,11 @@ class GoalUpdate(Model):
 
 
 class HabitUpdate(Model):
+    """Propose a habit with evidence, never an assumed repeated real-world event.
+
+    提出有证据的习惯，不假定现实事件已经反复发生。
+    """
+
     id: Identifier
     description: str = Field(min_length=1, max_length=500)
     activity: Activity = "reading"
@@ -102,6 +145,11 @@ class HabitUpdate(Model):
 
 
 class Habit(HabitUpdate):
+    """Track gradual habit support separately from immutable character identity.
+
+    记录渐进习惯支持，与不可变角色身份分离。
+    """
+
     observed_days: list[str] = Field(default_factory=list, max_length=30)
     established: bool = False
     strength: Score = 0
@@ -110,6 +158,11 @@ class Habit(HabitUpdate):
 
 
 class Topic(Model):
+    """Keep opted-in follow-up relevance and cooldown state.
+
+    保存已允许跟进的话题相关性及冷却状态。
+    """
+
     evidence_ids: list[Identifier] = Field(default_factory=list, max_length=10)
     id: Identifier
     description: str = Field(min_length=1, max_length=500)
@@ -121,6 +174,11 @@ class Topic(Model):
 
 
 class TopicUpdate(Model):
+    """Bound explicit topic edits and mention observations.
+
+    约束显式话题编辑及提及观察。
+    """
+
     evidence_ids: list[Identifier] = Field(default_factory=list, max_length=10)
     id: Identifier
     description: str = Field(min_length=1, max_length=500)
@@ -132,6 +190,11 @@ class TopicUpdate(Model):
 
 
 class LifeState(Model):
+    """Track simulated activity timing; simulation must not become shared experience.
+
+    记录模拟活动时序；模拟不能变成用户共同经历。
+    """
+
     activity: Activity = "idle"
     current_process: str = Field(default="daily_routine", max_length=100)
     current_phase: str = Field(default="idle", max_length=100)
@@ -145,6 +208,11 @@ class LifeState(Model):
 
 
 class Decision(Model):
+    """Persist a reserved intent and delivery state, not evidence that a message was sent.
+
+    保存预留意图及投递状态，不证明消息已经发送。
+    """
+
     id: Identifier = Field(default_factory=new_id)
     should_contact: bool = False
     # Old pending records have no phase: they may already have reached a gateway.
@@ -164,19 +232,30 @@ class Decision(Model):
 
 
 class CompanionUpdate(Model):
+    """Describe bounded companion mutations; legacy Mood writes are rejected by the API.
+
+    描述有界陪伴变化；旧 Mood 写入由 API 明确拒绝。
+    """
+
     settings: SettingsUpdate | None = None
-    mood: MoodUpdate | None = None
+    mood: MoodUpdate | dict[str, JsonValue] | None = None
     goal: GoalUpdate | None = None
     habit: HabitUpdate | None = None
     topic: TopicUpdate | None = None
 
 
 class CompanionState(Model):
+    """Current life state plus an opaque historical Mood archive.
+
+    当前生活状态附带不透明的历史 Mood 档案；未知字段往返保留，不参与当前决策。
+    """
+
+    model_config = ConfigDict(extra="allow")
     schema_version: Literal[1] = 1
     character_id: Identifier
     revision: int = Field(default=1, ge=1)
     settings: Settings = Field(default_factory=Settings)
-    mood: Mood = Field(default_factory=Mood)
+    mood: dict[str, JsonValue] = Field(default_factory=dict, description="Read-only legacy archive")
     goals: list[Goal] = Field(default_factory=list, max_length=30)
     habits: list[Habit] = Field(default_factory=list, max_length=20)
     topics: list[Topic] = Field(default_factory=list, max_length=30)
@@ -191,3 +270,20 @@ class CompanionState(Model):
     acknowledgements: dict[str, bool] = Field(default_factory=dict, max_length=32)
     contacted_topics: dict[str, AwareDatetime] = Field(default_factory=dict, max_length=60)
     simulated_memories: list[Candidate] = Field(default_factory=list, max_length=30)
+
+
+class LegacyMoodWriteUnsupported(ValueError):
+    """Stable public compatibility failure; legacy data remains read-only.
+
+    稳定的公开兼容错误；旧数据只读，不能静默转换为新的情绪变化。
+    """
+
+    code = "LEGACY_MOOD_WRITE_UNSUPPORTED"
+    read_only = True
+    replacement = "AffectEffect"
+
+    def __init__(self) -> None:
+        super().__init__(
+            "Legacy Mood is a read-only archive; "
+            "submit AffectEffect via TurnProposal.affect_effects"
+        )

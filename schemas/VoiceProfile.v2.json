@@ -1,6 +1,143 @@
 {
+  "$defs": {
+    "CatchphraseRule": {
+      "additionalProperties": false,
+      "description": "Optional suitability and repetition limits, never mandatory text insertion.\n\n可选适用场景与重复限制，绝不代表必须插入某个口头禅。",
+      "properties": {
+        "phrase": {
+          "maxLength": 80,
+          "minLength": 1,
+          "title": "Phrase",
+          "type": "string"
+        },
+        "usage": {
+          "items": {
+            "maxLength": 80,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 6,
+          "title": "Usage",
+          "type": "array"
+        },
+        "intensity": {
+          "default": "light",
+          "enum": [
+            "light",
+            "normal",
+            "emphatic"
+          ],
+          "title": "Intensity",
+          "type": "string"
+        },
+        "cooldown_seconds": {
+          "default": 120,
+          "maximum": 86400,
+          "minimum": 0,
+          "title": "Cooldown Seconds",
+          "type": "integer"
+        },
+        "avoid_contexts": {
+          "items": {
+            "maxLength": 40,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 12,
+          "title": "Avoid Contexts",
+          "type": "array"
+        }
+      },
+      "required": [
+        "phrase"
+      ],
+      "title": "CatchphraseRule",
+      "type": "object"
+    },
+    "DialogueExample": {
+      "additionalProperties": false,
+      "description": "A curated meaning-to-expression example; assistant history is never baseline authority.\n\n精选的语义到人物表达示范；助手历史输出绝不自动成为基线权威。",
+      "properties": {
+        "meaning": {
+          "maxLength": 500,
+          "minLength": 1,
+          "title": "Meaning",
+          "type": "string"
+        },
+        "character": {
+          "maxLength": 1000,
+          "minLength": 1,
+          "title": "Character",
+          "type": "string"
+        }
+      },
+      "required": [
+        "meaning",
+        "character"
+      ],
+      "title": "DialogueExample",
+      "type": "object"
+    }
+  },
   "additionalProperties": false,
+  "description": "One portable voice model for conversation and professional tasks alike.\n\n闲聊与专业任务共用同一可迁移表达模型，不建立第二套任务人格。",
   "properties": {
+    "preferred_vocabulary": {
+      "items": {
+        "maxLength": 80,
+        "minLength": 1,
+        "type": "string"
+      },
+      "maxItems": 8,
+      "title": "Preferred Vocabulary",
+      "type": "array"
+    },
+    "avoided_vocabulary": {
+      "items": {
+        "maxLength": 80,
+        "minLength": 1,
+        "type": "string"
+      },
+      "maxItems": 8,
+      "title": "Avoided Vocabulary",
+      "type": "array"
+    },
+    "sentence_rhythm": {
+      "default": "natural varied rhythm",
+      "maxLength": 300,
+      "title": "Sentence Rhythm",
+      "type": "string"
+    },
+    "explanation_style": {
+      "default": "character-appropriate, clear causal reasoning",
+      "maxLength": 300,
+      "title": "Explanation Style",
+      "type": "string"
+    },
+    "analogy_style": {
+      "default": "only when useful",
+      "maxLength": 300,
+      "title": "Analogy Style",
+      "type": "string"
+    },
+    "evaluation_style": {
+      "default": "direct with factual conditions intact",
+      "maxLength": 300,
+      "title": "Evaluation Style",
+      "type": "string"
+    },
+    "disagreement_style": {
+      "default": "state the reason respectfully",
+      "maxLength": 300,
+      "title": "Disagreement Style",
+      "type": "string"
+    },
+    "question_style": {
+      "default": "ask only useful follow-up questions",
+      "maxLength": 300,
+      "title": "Question Style",
+      "type": "string"
+    },
     "verbosity_default": {
       "default": "balanced",
       "enum": [
@@ -59,6 +196,14 @@
       "title": "Emotional Expressiveness",
       "type": "string"
     },
+    "catchphrase_rules": {
+      "items": {
+        "$ref": "#/$defs/CatchphraseRule"
+      },
+      "maxItems": 8,
+      "title": "Catchphrase Rules",
+      "type": "array"
+    },
     "catchphrases": {
       "items": {
         "maxLength": 4000,
@@ -88,11 +233,38 @@
       "title": "Repetition Tolerance",
       "type": "string"
     },
-    "dialogue_examples": {
+    "preferred_patterns": {
       "items": {
-        "maxLength": 4000,
+        "maxLength": 80,
         "minLength": 1,
         "type": "string"
+      },
+      "maxItems": 8,
+      "title": "Preferred Patterns",
+      "type": "array"
+    },
+    "avoided_patterns": {
+      "items": {
+        "maxLength": 80,
+        "minLength": 1,
+        "type": "string"
+      },
+      "maxItems": 8,
+      "title": "Avoided Patterns",
+      "type": "array"
+    },
+    "dialogue_examples": {
+      "items": {
+        "anyOf": [
+          {
+            "maxLength": 4000,
+            "minLength": 1,
+            "type": "string"
+          },
+          {
+            "$ref": "#/$defs/DialogueExample"
+          }
+        ]
       },
       "maxItems": 10,
       "title": "Dialogue Examples",

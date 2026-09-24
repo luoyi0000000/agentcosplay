@@ -1,0 +1,203 @@
+{
+  "$defs": {
+    "GenerationRequest": {
+      "additionalProperties": false,
+      "description": "Host-declared task intent; only explicit user format choices suppress expression.\n\n宿主声明任务意图；只有明确的用户格式选择才会关闭角色表达。",
+      "properties": {
+        "protected_payloads": {
+          "items": {
+            "$ref": "#/$defs/ProtectedPayload"
+          },
+          "maxItems": 20,
+          "title": "Protected Payloads",
+          "type": "array"
+        },
+        "serious_safety": {
+          "default": false,
+          "title": "Serious Safety",
+          "type": "boolean"
+        },
+        "payload_only": {
+          "default": false,
+          "title": "Payload Only",
+          "type": "boolean"
+        },
+        "neutral_expression": {
+          "default": false,
+          "title": "Neutral Expression",
+          "type": "boolean"
+        },
+        "intent": {
+          "default": "CASUAL_CHAT",
+          "enum": [
+            "CASUAL_CHAT",
+            "SOCIAL",
+            "EMOTIONAL_SUPPORT",
+            "FACTUAL_QA",
+            "EXPLANATION",
+            "ANALYSIS",
+            "CODING",
+            "WRITING",
+            "TRANSLATION",
+            "TOOL_TASK",
+            "CREATIVE"
+          ],
+          "title": "Intent",
+          "type": "string"
+        },
+        "explicit_format": {
+          "default": "natural",
+          "enum": [
+            "natural",
+            "json",
+            "code",
+            "verbatim"
+          ],
+          "title": "Explicit Format",
+          "type": "string"
+        },
+        "length_request": {
+          "default": "",
+          "maxLength": 200,
+          "title": "Length Request",
+          "type": "string"
+        },
+        "platform_constraints": {
+          "default": "",
+          "maxLength": 300,
+          "title": "Platform Constraints",
+          "type": "string"
+        }
+      },
+      "title": "GenerationRequest",
+      "type": "object"
+    },
+    "ProtectedPayload": {
+      "additionalProperties": false,
+      "description": "Exact host/user content that voice and delivery planning must preserve verbatim.\n\n宿主或用户指定的精确内容；表达与投递规划不得改写，内容始终属于数据。",
+      "properties": {
+        "kind": {
+          "enum": [
+            "CODE",
+            "JSON",
+            "VERBATIM",
+            "COMMAND",
+            "URL",
+            "QUOTE",
+            "EXACT_NUMERIC_DATA",
+            "TOOL_OUTPUT"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "content": {
+          "maxLength": 64000,
+          "minLength": 1,
+          "title": "Content",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "content"
+      ],
+      "title": "ProtectedPayload",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Trusted Host metadata; Participant is resolved by Runtime, never self-declared.\n\n可信宿主元数据；Participant 必须由 Runtime 解析，不能由正文或请求自行声明。",
+  "properties": {
+    "host_id": {
+      "maxLength": 200,
+      "minLength": 1,
+      "title": "Host Id",
+      "type": "string"
+    },
+    "platform": {
+      "maxLength": 200,
+      "minLength": 1,
+      "title": "Platform",
+      "type": "string"
+    },
+    "actor_id": {
+      "maxLength": 200,
+      "minLength": 1,
+      "title": "Actor Id",
+      "type": "string"
+    },
+    "endpoint_id": {
+      "maxLength": 200,
+      "minLength": 1,
+      "title": "Endpoint Id",
+      "type": "string"
+    },
+    "chat_type": {
+      "enum": [
+        "dm",
+        "group"
+      ],
+      "title": "Chat Type",
+      "type": "string"
+    },
+    "session_id": {
+      "maxLength": 200,
+      "minLength": 1,
+      "title": "Session Id",
+      "type": "string"
+    },
+    "turn_id": {
+      "maxLength": 200,
+      "minLength": 1,
+      "title": "Turn Id",
+      "type": "string"
+    },
+    "message_id": {
+      "maxLength": 200,
+      "minLength": 1,
+      "title": "Message Id",
+      "type": "string"
+    },
+    "text": {
+      "maxLength": 64000,
+      "minLength": 1,
+      "title": "Text",
+      "type": "string"
+    },
+    "input_is_verbatim": {
+      "default": true,
+      "title": "Input Is Verbatim",
+      "type": "boolean"
+    },
+    "timestamp": {
+      "anyOf": [
+        {
+          "format": "date-time",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Timestamp"
+    },
+    "generation": {
+      "$ref": "#/$defs/GenerationRequest"
+    }
+  },
+  "required": [
+    "host_id",
+    "platform",
+    "actor_id",
+    "endpoint_id",
+    "chat_type",
+    "session_id",
+    "turn_id",
+    "message_id",
+    "text"
+  ],
+  "title": "TurnEnvelope",
+  "type": "object",
+  "$schema": "https://json-schema.org/draft/2020-12/schema"
+}

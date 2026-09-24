@@ -1,0 +1,7 @@
+name: agentcosplay
+display_name: agentcosplay
+desc: Platform-neutral Character Runtime through a shared local backend
+version: 2.0.0
+author: luoyi0000000
+repo: https://github.com/luoyi0000000/agentcosplay
+astrbot_version: ">=4.28.1"

@@ -1,0 +1,33 @@
+{
+  "additionalProperties": false,
+  "description": "Exact host/user content that voice and delivery planning must preserve verbatim.\n\n宿主或用户指定的精确内容；表达与投递规划不得改写，内容始终属于数据。",
+  "properties": {
+    "kind": {
+      "enum": [
+        "CODE",
+        "JSON",
+        "VERBATIM",
+        "COMMAND",
+        "URL",
+        "QUOTE",
+        "EXACT_NUMERIC_DATA",
+        "TOOL_OUTPUT"
+      ],
+      "title": "Kind",
+      "type": "string"
+    },
+    "content": {
+      "maxLength": 64000,
+      "minLength": 1,
+      "title": "Content",
+      "type": "string"
+    }
+  },
+  "required": [
+    "kind",
+    "content"
+  ],
+  "title": "ProtectedPayload",
+  "type": "object",
+  "$schema": "https://json-schema.org/draft/2020-12/schema"
+}

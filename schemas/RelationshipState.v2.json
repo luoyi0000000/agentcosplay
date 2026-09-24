@@ -2,6 +2,7 @@
   "$defs": {
     "Relationship": {
       "additionalProperties": false,
+      "description": "Bound relationship dimensions and explicit interaction boundaries.\n\n约束关系维度及显式互动边界。",
       "properties": {
         "stage": {
           "default": "stranger",
@@ -62,6 +63,7 @@
     }
   },
   "additionalProperties": false,
+  "description": "Keep the participant's learned relationship, explicit override and evidence history.\n\n保存参与者的已形成关系、显式覆盖及证据历史。",
   "properties": {
     "character_id": {
       "maxLength": 200,

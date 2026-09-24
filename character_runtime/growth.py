@@ -1,4 +1,7 @@
-"""Evidence-gated versioned overlays; automatic changes never edit the baseline."""
+"""Evidence-gated versioned overlays; automatic changes never edit the baseline.
+
+证据门控制版本化叠加层；自动变化不修改角色基线。
+"""
 
 from datetime import timedelta
 from typing import TYPE_CHECKING, Any, Literal
@@ -12,10 +15,20 @@ if TYPE_CHECKING:
 
 
 class Growth:
+    """Version character changes after source authorization and evidence validation.
+
+    在来源授权和证据验证后对角色变化建立版本。
+    """
+
     def __init__(self, knowledge: "Knowledge") -> None:
         self.k = knowledge
 
     def current(self, cid: str) -> tuple[str, dict[str, dict[str, str]]]:
+        """Read the active overlay; reject a head pointing to another character.
+
+        读取当前叠加层；拒绝指向其他角色的版本头。
+        """
+
         head = self.k.storage.get(self.k.owner, "growth_head", cid)
         if not head or not head.get("version"):
             return "baseline", {}
@@ -26,6 +39,17 @@ class Growth:
         return parsed.id, parsed.overlay
 
     def propose(self, candidate: GrowthCandidate) -> dict[str, Any]:
+        # Turn-local participants cannot promote their preferences into shared Character Core.
+        # 普通逐轮交互不能把个人偏好提升为共享角色核心；全局成长走 Owner 管理入口。
+        """Validate source authority and impact before storing or approving a candidate.
+
+        保存或批准候选前验证来源权限与影响等级。
+        """
+
+        if getattr(self.k.storage, "actor", None) is not None:
+            raise ValueError(
+                "Global Growth requires owner administration; use participant_adaptations"
+            )
         cid = candidate.character_id
         events = self.k.evidence(cid, candidate.evidence_refs)
         if any(e.source_kind != "USER_DIRECT" for e in events):
@@ -41,7 +65,9 @@ class Growth:
             if same_axes and set(candidate.evidence_refs) <= set(previous.get("evidence_refs", [])):
                 raise ValueError("The same evidence cannot drive the same growth dimension again")
         definition = self.k.characters.get(cid)
-        low = {"verbosity_default", "humor_style", "directness"}
+        # Core humor/persona changes require explicit approval, even with repeated evidence.
+        # 核心幽默人格变化即使有重复证据也必须显式批准。
+        low = {"verbosity_default", "sentence_length", "directness"}
         impact: Literal["low", "medium", "high"] = (
             "low"
             if all(c.domain == "voice" and c.key in low for c in candidate.changes)
@@ -62,6 +88,11 @@ class Growth:
         return {"candidate_id": candidate.id, "status": "pending", "impact": impact}
 
     def approve(self, cid: str, candidate_id: str, *, explicit: bool) -> dict[str, Any]:
+        """Recheck evidence and impact gates before promoting a growth version.
+
+        提升成长版本前重新检查证据与影响门。
+        """
+
         value = self.k.storage.get(self.k.owner, "growth_candidate", candidate_id)
         if not value or value["character_id"] != cid or value["status"] != "pending":
             raise ValueError("Pending owned growth candidate required")
@@ -140,6 +171,11 @@ class Growth:
         )
 
     def rollback(self, cid: str, target_id: str) -> dict[str, Any]:
+        """Restore a known owned version and start the rollback cooldown.
+
+        恢复已知所属版本并启动回滚冷却。
+        """
+
         target = self.k.storage.get(self.k.owner, "growth_version", target_id)
         if not target or target["character_id"] != cid:
             raise ValueError("Rollback target is outside character scope")

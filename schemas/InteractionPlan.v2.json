@@ -1,0 +1,88 @@
+{
+  "$defs": {
+    "InteractionAction": {
+      "additionalProperties": false,
+      "description": "One behavior step; only visible segments require durable delivery ACK.\n\n单个行为步骤；只有可见片段需要持久投递确认。",
+      "properties": {
+        "kind": {
+          "enum": [
+            "WAIT",
+            "TYPING",
+            "SEND_TEXT",
+            "REPLY",
+            "REACTION",
+            "STICKER",
+            "FOLLOW_UP",
+            "SILENCE"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "content": {
+          "default": "",
+          "maxLength": 64000,
+          "title": "Content",
+          "type": "string"
+        },
+        "delay_ms": {
+          "default": 0,
+          "maximum": 60000,
+          "minimum": 0,
+          "title": "Delay Ms",
+          "type": "integer"
+        },
+        "segment_index": {
+          "anyOf": [
+            {
+              "maximum": 20,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Segment Index"
+        },
+        "reply_target": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Reply Target"
+        }
+      },
+      "required": [
+        "kind"
+      ],
+      "title": "InteractionAction",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "A plan is not an event, nor proof of generation or delivery.\n\n计划不是事件，也不是生成或发送成功的证明。",
+  "properties": {
+    "actions": {
+      "items": {
+        "$ref": "#/$defs/InteractionAction"
+      },
+      "maxItems": 64,
+      "title": "Actions",
+      "type": "array"
+    }
+  },
+  "required": [
+    "actions"
+  ],
+  "title": "InteractionPlan",
+  "type": "object",
+  "$schema": "https://json-schema.org/draft/2020-12/schema"
+}

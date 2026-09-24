@@ -1,5 +1,6 @@
 {
   "additionalProperties": false,
+  "description": "Represent a sourced visual description, not identity or lived-event evidence.\n\n表示有来源的视觉描述，不作为身份或亲历事件证据。",
   "properties": {
     "id": {
       "maxLength": 200,

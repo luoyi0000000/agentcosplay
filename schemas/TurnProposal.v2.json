@@ -2,6 +2,7 @@
   "$defs": {
     "AffectEffect": {
       "additionalProperties": false,
+      "description": "Evidence-gated mutation input, never a second persisted emotional state.\n\n经证据门验证的变化输入，不是第二份持久情绪状态。",
       "properties": {
         "valence": {
           "default": 0,
@@ -61,6 +62,7 @@
     },
     "CompanionUpdate": {
       "additionalProperties": false,
+      "description": "Describe bounded companion mutations; legacy Mood writes are rejected by the API.\n\n描述有界陪伴变化；旧 Mood 写入由 API 明确拒绝。",
       "properties": {
         "settings": {
           "anyOf": [
@@ -79,10 +81,17 @@
               "$ref": "#/$defs/MoodUpdate"
             },
             {
+              "additionalProperties": {
+                "$ref": "#/$defs/JsonValue"
+              },
+              "type": "object"
+            },
+            {
               "type": "null"
             }
           ],
-          "default": null
+          "default": null,
+          "title": "Mood"
         },
         "goal": {
           "anyOf": [
@@ -123,6 +132,7 @@
     },
     "FactProposal": {
       "additionalProperties": false,
+      "description": "Request creation or supersession using evidence and explicit target authorization.\n\n使用证据与显式目标授权请求创建或替代事实。",
       "properties": {
         "semantic_key": {
           "maxLength": 200,
@@ -218,6 +228,7 @@
     },
     "GoalUpdate": {
       "additionalProperties": false,
+      "description": "Bound goal changes and their evidence references before applying them.\n\n应用前约束目标变化及证据引用。",
       "properties": {
         "id": {
           "maxLength": 200,
@@ -318,6 +329,7 @@
     },
     "GrowthChange": {
       "additionalProperties": false,
+      "description": "Describe one proposed stable overlay change in an allowed character domain.\n\n描述允许角色领域中的一项稳定叠加层变化提案。",
       "properties": {
         "domain": {
           "enum": [
@@ -351,6 +363,7 @@
     },
     "GrowthDraft": {
       "additionalProperties": false,
+      "description": "Collect evidence-backed changes pending source and impact authorization.\n\n收集有证据的变化，等待来源及影响授权。",
       "properties": {
         "changes": {
           "items": {
@@ -389,6 +402,7 @@
     },
     "HabitUpdate": {
       "additionalProperties": false,
+      "description": "Propose a habit with evidence, never an assumed repeated real-world event.\n\n提出有证据的习惯，不假定现实事件已经反复发生。",
       "properties": {
         "id": {
           "maxLength": 200,
@@ -433,8 +447,10 @@
       "title": "HabitUpdate",
       "type": "object"
     },
+    "JsonValue": {},
     "MemoryProposal": {
       "additionalProperties": false,
+      "description": "Propose a summary backed by RawEvent references; persistence still requires validation.\n\n提出附带 RawEvent 引用的摘要；持久化仍须验证。",
       "properties": {
         "content": {
           "maxLength": 4000,
@@ -543,6 +559,7 @@
     },
     "MoodUpdate": {
       "additionalProperties": false,
+      "description": "Legacy request shape, retained only to return an explicit compatibility error.\n\n旧请求形状仅用于明确返回兼容错误，不再参与情绪写入。",
       "properties": {
         "label": {
           "maxLength": 80,
@@ -583,6 +600,7 @@
     },
     "NarrativeProposal": {
       "additionalProperties": false,
+      "description": "Derive a narrative from evidence; the narrative cannot become evidence itself.\n\n从证据派生叙事；叙事不能反向成为证据。",
       "properties": {
         "content": {
           "maxLength": 4000,
@@ -609,8 +627,49 @@
       "title": "NarrativeProposal",
       "type": "object"
     },
+    "ParticipantAdaptation": {
+      "additionalProperties": false,
+      "description": "Low-impact enumerated preferences, never a Character Core mutation.\n\n枚举化的低影响互动偏好；只影响当前 Participant，不修改 Character Core。",
+      "properties": {
+        "dimension": {
+          "enum": [
+            "verbosity_default",
+            "directness",
+            "emoji_use",
+            "technical_detail"
+          ],
+          "title": "Dimension",
+          "type": "string"
+        },
+        "value": {
+          "maxLength": 30,
+          "minLength": 1,
+          "title": "Value",
+          "type": "string"
+        },
+        "evidence_refs": {
+          "items": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 20,
+          "minItems": 1,
+          "title": "Evidence Refs",
+          "type": "array"
+        }
+      },
+      "required": [
+        "dimension",
+        "value",
+        "evidence_refs"
+      ],
+      "title": "ParticipantAdaptation",
+      "type": "object"
+    },
     "RelationshipEffect": {
       "additionalProperties": false,
+      "description": "Request a bounded relational change with supporting evidence, not direct state authority.\n\n请求有证据的有界关系变化，不直接拥有状态权威。",
       "properties": {
         "dimension": {
           "enum": [
@@ -652,6 +711,7 @@
     },
     "SettingsUpdate": {
       "additionalProperties": false,
+      "description": "Patch only supplied owner settings, preserving unspecified values.\n\n只修改提供的 Owner 设置，保留未指定值。",
       "properties": {
         "proactive_contact": {
           "anyOf": [
@@ -809,6 +869,7 @@
     },
     "TopicUpdate": {
       "additionalProperties": false,
+      "description": "Bound explicit topic edits and mention observations.\n\n约束显式话题编辑及提及观察。",
       "properties": {
         "evidence_ids": {
           "items": {
@@ -878,7 +939,16 @@
     }
   },
   "additionalProperties": false,
+  "description": "Bundle candidate effects for one atomic evidence-gated commit.\n\n组合候选变化，交给一次有证据门的原子提交。",
   "properties": {
+    "participant_adaptations": {
+      "items": {
+        "$ref": "#/$defs/ParticipantAdaptation"
+      },
+      "maxItems": 4,
+      "title": "Participant Adaptations",
+      "type": "array"
+    },
     "affect_effects": {
       "items": {
         "$ref": "#/$defs/AffectEffect"

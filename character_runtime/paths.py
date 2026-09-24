@@ -1,4 +1,7 @@
-"""Local-first path policy, usable by the installer without third-party dependencies."""
+"""Local-first path policy, usable by the installer without third-party dependencies.
+
+本地优先路径策略；安装器使用时不依赖第三方包。
+"""
 
 import os
 import sys
@@ -11,6 +14,11 @@ def default_base(
     env: Mapping[str, str] | None = None,
     home: Path | None = None,
 ) -> Path:
+    """Choose the current user's platform data directory, not the source tree.
+
+    选择当前用户的平台数据目录，不放入源码树。
+    """
+
     env = os.environ if env is None else env
     home = Path.home() if home is None else home
     if platform == "win32":
@@ -25,6 +33,11 @@ def default_base(
 
 
 def validate_data_path(path: Path, program_roots: Sequence[Path] = ()) -> Path:
+    """Reject unsafe data locations before persistent files are opened.
+
+    打开持久文件前拒绝不安全的数据位置。
+    """
+
     path = path.expanduser()
     if not path.is_absolute():
         raise ValueError("Character data directory must be an absolute path")
@@ -38,5 +51,10 @@ def validate_data_path(path: Path, program_roots: Sequence[Path] = ()) -> Path:
 
 
 def runtime_data_dir() -> Path:
+    """Resolve the configured local persistence directory through the path policy.
+
+    按路径策略解析配置的本地持久化目录。
+    """
+
     configured = os.environ.get("CHARACTER_DATA_DIR")
     return validate_data_path(Path(configured) if configured else default_base() / "characters")

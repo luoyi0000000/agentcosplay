@@ -1,5 +1,55 @@
 {
+  "$defs": {
+    "MemoryScope": {
+      "additionalProperties": false,
+      "description": "Explicit memory audience, independent of confidence and retrieval scores.\n\n显式记忆受众；置信度、召回分数和同群关系均不授予访问权。",
+      "properties": {
+        "kind": {
+          "enum": [
+            "PARTICIPANT_CHARACTER",
+            "ENDPOINT_CHARACTER"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "participant_id": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Participant Id"
+        },
+        "endpoint_id": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Endpoint Id"
+        }
+      },
+      "required": [
+        "kind"
+      ],
+      "title": "MemoryScope",
+      "type": "object"
+    }
+  },
   "additionalProperties": false,
+  "description": "Store a scoped canonical summary with provenance and validity, never an exact quote.\n\n保存带作用域、来源及有效性的规范摘要，不冒充原话。",
   "properties": {
     "id": {
       "maxLength": 200,
@@ -18,6 +68,17 @@
       "minLength": 1,
       "title": "Character Id",
       "type": "string"
+    },
+    "record_scope": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/MemoryScope"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
     },
     "kind": {
       "anyOf": [

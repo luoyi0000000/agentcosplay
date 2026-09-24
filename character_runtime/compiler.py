@@ -1,4 +1,7 @@
-"""Stable character compiler; validated SQLite records are promoted atomically."""
+"""Stable character compiler; validated SQLite records are promoted atomically.
+
+稳定角色编译器；验证后的 SQLite 记录原子提升为当前版本。
+"""
 
 from typing import Any
 
@@ -7,7 +10,7 @@ from .models import CharacterDefinition, VoiceProfile
 from .rules import BASE_RULES, MODE_RULES
 from .storage import Storage
 
-COMPILER_VERSION = "2"
+COMPILER_VERSION = "4"
 _DYNAMIC_FACTS = {
     "current_time",
     "timestamp",
@@ -25,6 +28,11 @@ _DYNAMIC_FACTS = {
 
 
 def read_compiled(storage: Storage, owner: str, character_id: str) -> CompiledContext | None:
+    """Read and validate the owned compiled prefix before reuse.
+
+    复用前读取并验证所属角色的已编译前缀。
+    """
+
     value = storage.get(owner, "compiled_lkg", character_id)
     if value is None:
         return None
@@ -40,7 +48,10 @@ def compile_definition(
     growth_version: str = "baseline",
     overlay: dict[str, dict[str, str]] | None = None,
 ) -> CompiledContext:
-    """Validate a complete stable source without consulting runtime state."""
+    """Validate a complete stable source without consulting runtime state.
+
+    验证完整稳定源，不读取动态 Runtime 状态。
+    """
     character_id = (
         definition.id if isinstance(definition, CharacterDefinition) else definition.get("id")
     )
@@ -117,6 +128,8 @@ def compile(
 
     A version tuple is immutable: changed source content requires a new character or
     growth version. Invalid initial configuration raises instead of inventing a prefix.
+
+        编译并提升；失败时仅保留同一 Owner 同一角色的有效前缀。
     """
     character_id = (
         definition.id if isinstance(definition, CharacterDefinition) else definition.get("id")

@@ -1,4 +1,7 @@
-"""Private-safe integrity statistics for an authenticated owner's character."""
+"""Private-safe integrity statistics for an authenticated owner's character.
+
+认证 Owner 的角色完整性统计，不泄漏私人正文。
+"""
 
 from datetime import datetime
 from typing import Any
@@ -11,6 +14,11 @@ from .providers import Observation
 
 
 def diagnose(knowledge: Knowledge, character_id: str) -> dict[str, Any]:
+    """Report integrity diagnostics without returning private record bodies.
+
+    返回完整性诊断，不返回私人记录正文。
+    """
+
     knowledge.characters.get(character_id)
     counts: dict[str, int] = {}
     invalid_evidence = stale_jobs = invalid_records = orphan_records = legacy_records = 0
@@ -62,5 +70,11 @@ def diagnose(knowledge: Knowledge, character_id: str) -> dict[str, Any]:
         "context_budget": ContextBudget().model_dump(),
         "compiled_fingerprint": compiled.fingerprint if compiled else None,
         "pending_proactive": bool(pending.get("pending_decision")),
-        "migration_warnings": len(knowledge.storage.list(knowledge.owner, "migration_warning")),
+        # Owner-wide warnings may identify private records; scoped diagnostics omit them.
+        # Owner 级迁移告警可能识别私人记录，单轮诊断不得读取。
+        "migration_warnings": (
+            None
+            if getattr(knowledge.storage, "actor", None)
+            else len(knowledge.storage.list(knowledge.owner, "migration_warning"))
+        ),
     }
