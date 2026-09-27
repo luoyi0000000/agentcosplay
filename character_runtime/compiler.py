@@ -10,7 +10,7 @@ from .models import CharacterDefinition, VoiceProfile
 from .rules import BASE_RULES, MODE_RULES
 from .storage import Storage
 
-COMPILER_VERSION = "4"
+COMPILER_VERSION = "5"
 _DYNAMIC_FACTS = {
     "current_time",
     "timestamp",

@@ -50,6 +50,10 @@ def main() -> None:
                 }
             )
             cid = rt.characters.create(CharacterDefinition(name="岚", voice=voice)).id
+            rt.open_session("unselected")
+            inactive = rt.context("unselected")
+            assert inactive["character_id"] is None
+            assert inactive["context_diagnostics"]["active"] is False
             rt.open_session("chat", character_id=cid)
             first = rt.context("chat")["stable_prefix"]
             for intent in get_args(GenerationIntent):
@@ -131,6 +135,84 @@ def main() -> None:
                 }
             )
             validate_response('看这里：\n```python\nprint("owo")\n```\n这样就好啦。', protected)
+            exact = GenerationRequest.model_validate(
+                {
+                    "intent": "TOOL_TASK",
+                    "protected_payloads": [
+                        {"kind": "EXACT_NUMERIC_DATA", "content": "25.3%"},
+                        {"kind": "EXACT_NUMERIC_DATA", "content": "659Mi/1.9Gi"},
+                        {"kind": "EXACT_NUMERIC_DATA", "content": "67%"},
+                    ],
+                }
+            )
+            projected = rt.context("chat", generation=exact)
+            exact_policy = next(
+                f["payload"]["expression_policy"]
+                for f in projected["temporary"]["state"]
+                if "expression_policy" in f["payload"]
+            )
+            assert exact_policy.get("protected_values") == [
+                {"kind": "EXACT_NUMERIC_DATA", "content": "25.3%"},
+                {"kind": "EXACT_NUMERIC_DATA", "content": "659Mi/1.9Gi"},
+                {"kind": "EXACT_NUMERIC_DATA", "content": "67%"},
+            ], "Protected literals never reached the generation context"
+            assert exact_policy["character_expression"]["enabled"]
+            assert "659Mi" not in json.dumps(projected["context_diagnostics"])
+            validate_response("CPU 25.3%，内存 659Mi/1.9Gi，磁盘 67%。先看日志增速。", exact)
+            validate_response("CPU: 25.3%. RAM: 659Mi/1.9Gi. Disk: 67%.", exact)
+            try:
+                validate_response("CPU 25.3%，内存 659Mi/1.9Gi，磁盘 76%。", exact)
+            except ValueError:
+                pass
+            else:
+                raise AssertionError("Changed exact numeric fact accepted")
+            try:
+                validate_response("CPU 125.3%，内存 1659Mi/1.9Gi，磁盘 167%。", exact)
+            except ValueError:
+                pass
+            else:
+                raise AssertionError("Larger numeric tokens impersonated protected facts")
+            for value, corrupted in (
+                ("659Mi", "RAM: 1,659Mi"),
+                ("659Mi", "RAM: 1'659Mi"),
+                ("659Mi", "RAM: 1٬659Mi"),
+                ("25", "Total: 25,000"),
+                ("659Mi/1.9Gi", "RAM: 1,659Mi/1.9Gi"),
+            ):
+                number = GenerationRequest.model_validate(
+                    {
+                        "protected_payloads": [{"kind": "EXACT_NUMERIC_DATA", "content": value}],
+                    }
+                )
+                validate_response(f"Value: {value}, unchanged.", number)
+                try:
+                    validate_response(corrupted, number)
+                except ValueError:
+                    pass
+                else:
+                    raise AssertionError("Numeric grouping separator bypassed exact-value guard")
+            json_numbers = GenerationRequest.model_validate(
+                {
+                    "explicit_format": "json",
+                    "payload_only": True,
+                    "protected_payloads": [
+                        {"kind": "EXACT_NUMERIC_DATA", "content": "25"},
+                        {"kind": "EXACT_NUMERIC_DATA", "content": "300"},
+                    ],
+                }
+            )
+            validate_response("[25,300]", json_numbers)
+            oversized = GenerationRequest.model_validate(
+                {
+                    "protected_payloads": [{"kind": "VERBATIM", "content": "x" * 10000}],
+                }
+            )
+            try:
+                rt.context("chat", generation=oversized)
+            except ValueError:
+                pass
+            else:
+                raise AssertionError("Unprojectable protected contract was silently dropped")
             try:
                 validate_response('print("uwu")', protected)
             except ValueError:

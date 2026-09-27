@@ -90,10 +90,18 @@ The decision is not written back to Memory. Exact recall reads RawEvent independ
 
 soft_roleplay 保留完整角色身份，按任务收敛表演；所有任务共用 VoiceProfile。词汇、节奏、解释、比喻、评价、追问和分歧风格进入稳定前缀。示范兼容旧字符串及 meaning/character 对照，但不会自动从助手历史学习；核心幽默风格变化须显式批准成长。
 
-GenerationRequest separates `explicit_format` from `payload_only`. Code/JSON inside an answer permits character prose around it. Only an explicit payload-only request suppresses wrappers; `neutral_expression` and session OOC/task_neutral suppress voice without deleting the character. Catchphrase rules are optional suggestions with usage/intensity/avoid-contexts and a cooldown measured from delivered ASSISTANT_VISIBLE history in the authorized audience.
+GenerationRequest separates `explicit_format` from `payload_only`. Code/JSON inside an answer permits character prose around it. Only an explicit payload-only request suppresses wrappers; `neutral_expression` and session OOC/task_neutral suppress voice without deleting the character. Catchphrase rules are optional suggestions with usage/intensity/avoid-contexts and a cooldown measured from authorized visible/generated observations; generation is never delivery evidence.
 
-GenerationRequest 将格式与 payload_only 分开；回答包含代码/JSON 时仍可有人物解释，明确要求纯载荷才禁止包装文字。neutral_expression 和 OOC/task_neutral 关闭表达，不删除角色。口头禅有场景、强度、避用条件与冷却，冷却仅根据已授权受众中实际可见的助手历史计算，绝不强制使用。
+GenerationRequest 将格式与 payload_only 分开；回答包含代码/JSON 时仍可有人物解释，明确要求纯载荷才禁止包装文字。neutral_expression 和 OOC/task_neutral 关闭表达，不删除角色。口头禅有场景、强度、避用条件与冷却，根据已授权受众中的可见或生成观察计算，绝不强制使用；生成观察不是投递证据。
 
-ProtectedPayload marks exact code, JSON, commands, URLs, quotes, numeric data and tool output. The local validator rejects changes to declared payloads and invalid raw JSON without a repair LLM. It does not prove newly generated code or factual claims correct. Compiler version 4 keeps the new semantics separate from old cached prefixes. Context assembly fails explicitly if it cannot retain the required expression contract.
+ProtectedPayload marks exact code, JSON, commands, URLs, quotes, numeric data and tool output. The local validator rejects changes to declared payloads and invalid raw JSON without a repair LLM. It does not prove newly generated code or factual claims correct. Compiler version 5 keeps the full-prose continuity contract separate from old cached prefixes. Context assembly includes declared literal values and fails explicitly if it cannot retain the required expression contract.
 
-ProtectedPayload 标记精确代码、JSON、命令、URL、引用、数字和工具输出。本地校验拒绝已声明载荷被改写及无效纯 JSON，不调用润色模型；它不保证新生成代码或事实结论正确。编译器版本 4 避免复用旧语义缓存；必要表达约束装不进预算时明确失败，不静默丢弃。
+ProtectedPayload 标记精确代码、JSON、命令、URL、引用、数字和工具输出。本地校验拒绝已声明载荷被改写及无效纯 JSON，不调用润色模型；它不保证新生成代码或事实结论正确。编译器版本 5 为全文角色表达建立新的缓存版本；上下文包含声明的精确值，必要表达约束装不进预算时明确失败，不静默丢弃。
+
+Character voice owns the entire free-language answer: technical explanations, assessments, recommendations, transitions, tool commentary and failure reactions. Exact spans are local exceptions. Protect facts, not the way facts are spoken. Numbers are protected as facts, not as sentences. Tool execution does not suspend identity; raw tool results stay raw. Anti-template guidance varies phrasing without flattening the character or forcing catchphrases.
+
+角色表达覆盖完整自然语言正文：技术解释、判断、建议、转场、工具解读及失败反应。精确片段只是局部例外，数字作为事实受到保护，不意味着整句必须中性化。工具执行不会暂停角色身份，原始结果仍保持原样。去模板化要求变化表达方式，不抹平人格，也不强加口头禅。
+
+A prepared lifecycle turn retains its GenerationRequest across context/tool/diagnostic reads and restarts; conflicting replacements are rejected. A different turn starts with a fresh request. Temporary neutral/OOC-style output uses `neutral_expression`; an explicitly entered persistent session OOC/task mode still requires its existing exit/end action. No text-style heuristic activates a character. `context_explain` reports resolved activation, character ID, definition/state presence, effective mode, expression enabled and generation flags. Protected values appear only in authorized generation context; diagnostics show their types and lengths, not their bodies.
+
+已准备回合的 GenerationRequest 在重读上下文、工具调用、诊断及重启后保持一致，冲突替换会被拒绝；不同回合重新建立请求。临时 neutral/OOC 式输出使用 neutral_expression；显式进入的持久会话 OOC/task 模式仍按原有 exit/end 操作结束。不能根据文本风格激活角色。context_explain 报告解析后的激活状态、角色 ID、定义/状态是否存在、有效模式、表达开关及生成标记。精确值仅进入授权生成上下文，诊断只报告类型和长度。

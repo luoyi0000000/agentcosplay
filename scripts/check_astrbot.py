@@ -5,6 +5,7 @@
 
 import argparse
 import asyncio
+import json
 import os
 import socket
 import subprocess
@@ -17,6 +18,7 @@ from types import SimpleNamespace
 from mcp.types import CallToolResult
 
 from character_runtime.astrbot_adapter import AstrBotAdapter
+from character_runtime.hermes_adapter import HermesAdapter
 from character_runtime.identity import bind
 from character_runtime.lifecycle import HostCapabilities, TurnEnvelope, TurnLifecycle
 from character_runtime.models import CharacterDefinition
@@ -122,6 +124,51 @@ async def run(directory):
             e["source_kind"] == "ASSISTANT_VISIBLE"
             for e in rt.for_turn(other["turn_id"]).knowledge.records("raw_event", cid)
         )
+        hermes = HermesAdapter(
+            "http://127.0.0.1:8765/mcp",
+            token,
+            "hermes",
+            [
+                {
+                    "platform": "qq",
+                    "chat_id": "group",
+                    "thread_id": "",
+                    "chat_type": "group",
+                    "kind": "group",
+                    "runtime_platform": "qq",
+                    "endpoint_id": endpoint["id"],
+                }
+            ],
+        )
+        hermes.bridge = Bridge()
+        projected = await hermes.context(
+            {
+                "HERMES_SESSION_PLATFORM": "qq",
+                "HERMES_SESSION_CHAT_ID": "group",
+                "HERMES_SESSION_CHAT_TYPE": "group",
+                "HERMES_SESSION_USER_ID": "alice",
+            },
+            session_id="cross-host",
+            turn_id="next",
+            user_message="next technical task",
+        )
+        assert projected.split("\nRuntime session_id:")[0] == other["context"]["stable_prefix"]
+        hstate = json.loads(projected.split("Turn-local context:\n")[1])["state"]
+        astate = json.loads(first.split("Turn-local context:\n")[1])["state"]
+        hpolicy = next(
+            f["payload"]["expression_policy"] for f in hstate if "expression_policy" in f["payload"]
+        )
+        apolicy = next(
+            f["payload"]["expression_policy"] for f in astate if "expression_policy" in f["payload"]
+        )
+        assert {k: v for k, v in hpolicy.items() if k != "frequency"} == {
+            k: v for k, v in apolicy.items() if k != "frequency"
+        }, "Native Hosts diverged on the shared expression contract"
+        assert hpolicy["character_expression"]["enabled"]
+        assert await hermes.tool("missing-session", "missing-turn", "character_read", {}) == (
+            '{"ok": false, "error": "Verified Runtime turn required"}'
+        )
+        assert rt.for_turn(other["turn_id"]).context(other["turn_id"])["character_id"] == cid
         # Per-request wrappers must neither mutate global tools nor fall back after eviction.
         # 单请求包装不能修改全局工具，也不能在令牌清除后回退管理权限。
         original = SimpleNamespace(
@@ -134,10 +181,24 @@ async def run(directory):
         result = await wrapped.call(None)
         assert isinstance(result, CallToolResult), "AstrBot MCP executor rejects string results"
         assert '"ok": true' in result.content[0].text
+        # A reused request may have another plugin's text after our injected block.
+        # 复用请求时，其他插件追加文本不能导致旧投影或旧工具权限残留。
+        request.func_tool = SimpleNamespace(tools=[wrapped])
+        request.system_prompt += "\nOther plugin rules"
+        event.message_obj.message_id = "m2"
+        await adapter.prepare(event, request, plain=True)
+        assert request.system_prompt.count("Runtime session_id:") == 1, "Stale turn projection"
+        assert "Other plugin rules" in request.system_prompt
+        event.get_session_id = lambda: "unrouted"
+        await adapter.prepare(event, request, plain=True)
+        assert request.system_prompt == "Host rules\nOther plugin rules"
+        assert request.func_tool.tools[0] is original, "Unrouted request retained a turn capability"
+        event.get_session_id = lambda: "group"
         adapter.turns.clear()
         result = await wrapped.call(None)
         assert isinstance(result, CallToolResult)
         assert '"ok": false' in result.content[0].text
+        await adapter.prepare(event, request, plain=True)
         event.get_sender_id = lambda: "unknown"
         try:
             await adapter.prepare(event, request, plain=True)
@@ -145,6 +206,8 @@ async def run(directory):
             pass
         else:
             raise AssertionError("Unknown actor gained Runtime context")
+        assert request.system_prompt == "Host rules\nOther plugin rules"
+        assert request.func_tool.tools[0] is original
     finally:
         store.close()
 

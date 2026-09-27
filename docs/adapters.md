@@ -46,6 +46,14 @@ AstrBot native entry uses official `on_llm_request` and `on_llm_response`, expli
 
 AstrBot 原生入口使用官方请求/响应钩子、显式平台实例/Endpoint 路由及同一 Runtime 生命周期。请求系统消息中先放稳定前缀再放动态上下文；AstrBot 不将该首条系统消息写入历史。已有 MCP 工具按请求包装单轮令牌，不修改全局工具实例。只观察 `completion_text`，忽略隐藏推理。轻量传输兼容宿主 SDK 1.x 和 2.x，不替换依赖主版本、不继承代理、不跟随重定向。
 
+Reused AstrBot requests remove their own previous projection and unwrap old turn tools before routing, even when the next event is unrouted or rejected. Other plugins' appended text is preserved. If a Host has edited the injected block so it cannot be removed exactly, the request fails closed and must be rebuilt. No conversation history is deleted. Hermes continues using the official ephemeral user-message hook; neither bridge creates a second expression policy.
+
+AstrBot 请求对象复用时，在路由前移除自身旧投影及旧工具包装，下一事件无路由或被拒绝也一样。其他插件追加的文字会保留。宿主若改写注入块导致无法精确移除，则拒绝该请求，须重新创建请求对象；不删除会话历史。Hermes 继续使用官方单轮用户消息注入，两个 Bridge 都不创建第二套表达策略。
+
+Native hooks supply raw task text, not parsed semantic format constraints. Both bridges therefore start with fresh default generation metadata; the current user's explicit instructions still govern output. Clients that declare GenerationRequest obtain runtime format/payload validation. Native text-only requests are not falsely reported as parsed JSON/code contracts. Synthetic checks verify lifecycle and projection integrity; live Host/model tests must separately verify actual voice and history-bias recovery. Official hook contracts rechecked on 2026-09-27: [Hermes turn hooks](https://github.com/NousResearch/hermes-agent/blob/main/website/docs/user-guide/features/hooks.md), [AstrBot AI integration](https://docs.astrbot.app/dev/star/guides/ai.html).
+
+原生钩子提供任务原文，不提供解析后的语义格式约束，因此两个 Bridge 每轮从独立默认生成元数据开始；用户当前明确指令仍决定输出。主动声明 GenerationRequest 的客户端可获得 Runtime 格式和载荷校验。原生纯文本请求不会被谎称已解析成 JSON/代码契约。合成检查验证生命周期及投影完整性，实际语气和历史格式偏置恢复需另做真实 Host/模型验收。
+
 Official source inspected: AstrBot 4.28.1, `95e98b8aed75d56713666eff39e31bafffd95426`. Its respond stage catches send exceptions before invoking `after_message_sent`; this callback is not a reliable receipt. Both native bridges therefore declare `reliable_delivery_ack=false`; generated/finalized remains separate from delivered. This is a source-contract and synthetic integration result, not a live-platform certification. Sources: [plugin guide](https://docs.astrbot.app/dev/star/plugin-new.html), [respond stage](https://github.com/AstrBotDevs/AstrBot/blob/95e98b8aed75d56713666eff39e31bafffd95426/astrbot/core/pipeline/respond/stage.py), [history persistence](https://github.com/AstrBotDevs/AstrBot/blob/95e98b8aed75d56713666eff39e31bafffd95426/astrbot/core/pipeline/process_stage/method/agent_sub_stages/internal.py).
 
 所核对官方源码版本为 AstrBot 4.28.1。发送阶段捕获异常后仍触发 `after_message_sent`，因此两个原生 Bridge 均明确声明无可靠 ACK，生成/结束与送达分离。这是源码契约及合成接入验证，不是真实平台认证。

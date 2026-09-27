@@ -239,6 +239,7 @@ class Runtime:
             session = self.session(session_id)
             result: dict[str, Any] = {
                 "session_id": session.id,
+                "character_id": session.character_id,
                 "ooc": session.ooc,
                 "definition": None,
                 "state": None,
@@ -247,6 +248,13 @@ class Runtime:
                 "rules": list(BASE_RULES),
             }
             if session.character_id is None:
+                result["context_diagnostics"] = {
+                    "active": False,
+                    "character_id": None,
+                    "definition_present": False,
+                    "state_present": False,
+                    "character_expression_enabled": False,
+                }
                 result["onboarding"] = {
                     "status": "choose_character",
                     "prompt": "你想让我扮演谁？也可以创建一个新角色，或导入已有角色。",
@@ -254,6 +262,29 @@ class Runtime:
                 }
                 return result
             self.knowledge.scope(session_id)
+            prepared = self.storage.get(self.owner, "turn_lifecycle", session_id)
+            if prepared:
+                # A prepared turn owns its contract across tool calls and restarts. Never
+                # look up another turn by conversation: next-turn defaults stay independent.
+                # 已准备回合在工具调用和重启后仍持有自己的契约；不按会话查找上一轮。
+                if prepared.get("erased"):
+                    raise ValueError("Turn context was erased")
+                stored = GenerationRequest.model_validate(prepared["generation_request"])
+                if generation is not None and generation.model_dump() != stored.model_dump():
+                    raise ValueError("Prepared turn generation contract cannot change")
+                generation = stored
+            generation = GenerationRequest.model_validate(
+                (generation or GenerationRequest()).model_dump()
+            )
+            result["generation"] = {
+                key: value
+                for key, value in generation.model_dump(mode="json").items()
+                if key not in {"protected_payloads", "length_request", "platform_constraints"}
+            }
+            result["generation"]["protected_payloads"] = [
+                {"kind": payload.kind, "characters": len(payload.content)}
+                for payload in generation.protected_payloads
+            ]
             definition = self.characters.get(session.character_id)
             self.advance(definition.id)
             result.update(turn_windows(self, definition.id, session_id))
@@ -300,7 +331,7 @@ class Runtime:
                 )
                 result["participant_adaptation"] = adaptation
             result["expression_policy"] = expression(
-                generation or GenerationRequest(),
+                generation,
                 effective_voice,
                 result["state"]["relationship"],
                 "task_neutral" if session.ooc else mode,
@@ -318,7 +349,7 @@ class Runtime:
                     effective_voice,
                     usage,
                     self.clock(),
-                    generation or GenerationRequest(),
+                    generation,
                 )
                 if result["expression_policy"]["character_expression"]["enabled"]
                 else []

@@ -4,6 +4,7 @@
 """
 
 import json
+import re
 from datetime import datetime, time, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -25,6 +26,7 @@ def expression(
         "intent": request.intent,
         "format": request.explicit_format,
         "payload_only": request.payload_only,
+        "neutral_expression": request.neutral_expression,
         "user_length_request": request.length_request,
         "platform_constraints": request.platform_constraints,
         "content_constraints": [
@@ -44,6 +46,8 @@ def expression(
             else "stable voice + approved overlay + private turn adaptation",
             "restraint": "task-appropriate" if mode == "soft_roleplay" else "full",
             "rule": "Facts are not roleplayed; expression is character-owned.",
+            "coverage": "all free natural language, including the technical body, evaluations, "
+            "risk, recommendations, transitions, tool commentary, failure reactions and summaries",
         },
         "verbosity": "task-required"
         if suppressed or analytical or request.length_request
@@ -63,9 +67,12 @@ def expression(
         else "optional, sparse, never mandatory",
         "stage_direction_policy": "none" if suppressed else voice.stage_direction_policy,
         "protected_payloads": (
-            "Never stylize code, JSON, commands, URLs, quotes, numbers or tool output; "
-            "surrounding prose retains character voice."
+            "Preserve exact code, machine data, commands, URLs, paths, quotes, numbers, units "
+            "and raw tool output. Protect facts, not the way facts are spoken. "
+            "Numbers are protected as facts, not as sentences; surrounding prose stays in voice."
         ),
+        "protected_values": [p.model_dump(mode="json") for p in request.protected_payloads],
+        "turn_local": True,
         "history_is_voice_training": False,
         "hard_output_truncation": False,
     }
@@ -191,9 +198,36 @@ def validate_response(text: str, request: GenerationRequest) -> None:
     """
     if not text or len(text) > 64000:
         raise ValueError("Response must contain 1..64000 characters")
+    numeric_tokens: set[str] = set()
+    if any(p.kind == "EXACT_NUMERIC_DATA" for p in request.protected_payloads):
+        # JSON commas separate values, not thousands. Let the standard parser identify
+        # exact numeric lexemes so [25,300] is not mistaken for the number 25,300.
+        # JSON 逗号是值分隔符；用标准解析器识别原始数字，避免误判合法紧凑数组。
+        def number(value: str) -> str:
+            numeric_tokens.add(value)
+            return value
+
+        try:
+            json.loads(text, parse_int=number, parse_float=number)
+        except (ValueError, RecursionError):
+            numeric_tokens.clear()
     for payload in request.protected_payloads:
         if payload.content not in text:
             raise ValueError("Protected payload changed or missing")
+        # A substring such as 67% inside 167% is not an intact numeric fact. Keep
+        # adjacent Chinese prose legal; this is a token boundary check, not fact checking.
+        # 167% 中的子串 67% 不是原数字；允许紧邻中文正文，但不声称验证事实真假。
+        if (
+            payload.kind == "EXACT_NUMERIC_DATA"
+            and payload.content not in numeric_tokens
+            and not re.search(
+                r"(?<![\dA-Za-z_.+−-])(?<!\d[,٬'’])"
+                + re.escape(payload.content)
+                + r"(?![\dA-Za-z_%]|[.,٬'’]\d)",
+                text,
+            )
+        ):
+            raise ValueError("Protected numeric token changed or missing")
     if not request.payload_only:
         return
     if request.explicit_format in {"json", "code", "verbatim"} and text.lstrip().startswith("```"):

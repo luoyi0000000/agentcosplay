@@ -64,6 +64,26 @@ class AstrBotAdapter:
         AstrBot excludes its initial system message from persisted conversation history.
         AstrBot 保存会话历史时排除首条系统消息；因此动态状态不会积累到历史。
         """
+        # Request ownership, not event-cache membership, determines which text to remove.
+        # Clean even unrouted/rejected requests; never leave another turn's private context
+        # or callable capability behind. Ambiguous Host edits fail closed.
+        # 由请求本身记录注入块，不依赖事件缓存；无路由或拒绝的请求也先移除旧权限。
+        # 无法精确移除宿主改写的块时拒绝生成，避免上一轮私人上下文泄漏。
+        if request.func_tool is not None:
+            request.func_tool = copy(request.func_tool)
+            request.func_tool.tools = [
+                getattr(tool, "_agentcosplay_original_tool", tool)
+                for tool in request.func_tool.tools
+            ]
+        previous = getattr(request, "_agentcosplay_projection", None)
+        if previous:
+            base = request.system_prompt or ""
+            if base.count(previous) != 1:
+                raise ValueError(
+                    "Host changed the previous Runtime projection; use a fresh request"
+                )
+            request.system_prompt = base.replace(previous, "", 1)
+            request._agentcosplay_projection = None
         kind = {"GroupMessage": "group", "FriendMessage": "dm"}.get(event.message_obj.type.value)
         route = self.routes.get((event.get_platform_id(), event.get_session_id(), kind or ""))
         if route is None:
@@ -71,7 +91,7 @@ class AstrBotAdapter:
         if not event.get_sender_id() or not event.message_obj.message_id:
             raise ValueError("Verified sender and message ID required")
         key = self.event_key(event)
-        old = self.turns.get(key)
+        self.turns.pop(key, None)
         text = request.prompt or event.get_message_str()
         prepared = await self.bridge.call(
             "host_prepare_turn",
@@ -110,13 +130,11 @@ class AstrBotAdapter:
             + json.dumps(projection["temporary"], ensure_ascii=False)
         )
         base = request.system_prompt or ""
-        if old and base.endswith(old["suffix"]):
-            base = base[: -len(old["suffix"])]
         request.system_prompt = base + suffix
+        request._agentcosplay_projection = suffix
         self.turns[key] = {
             "capability": prepared["capability"],
             "turn_id": prepared["turn_id"],
-            "suffix": suffix,
         }
         while len(self.turns) > 128:
             self.turns.popitem(last=False)
@@ -136,6 +154,7 @@ class AstrBotAdapter:
         if getattr(tool, "mcp_server_name", None) != "agentcosplay":
             return tool
         wrapped = copy(tool)
+        wrapped._agentcosplay_original_tool = tool
         name = tool.mcp_tool.name
 
         async def call(_self: Any, context: Any, **kwargs: Any) -> CallToolResult:

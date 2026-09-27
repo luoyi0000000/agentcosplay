@@ -263,6 +263,22 @@ def project_context(
     assembled["context_diagnostics"]["memory_use_decisions"] = result.get(
         "memory_use_decisions", []
     )
+    # Activation comes from resolved state, never from role-like generated text.
+    # 激活状态来自已解析角色和状态，不从“像角色”的生成文本推断。
+    assembled["character_id"] = compiled.character_id
+    assembled["context_diagnostics"].update(
+        active=True,
+        character_id=compiled.character_id,
+        definition_present=True,
+        state_present=bool(state),
+        session_id=result.get("session_id"),
+        effective_mode=result.get("effective_mode"),
+        ooc=result.get("ooc", False),
+        generation=result.get("generation", {}),
+        character_expression_enabled=result.get("expression_policy", {})
+        .get("character_expression", {})
+        .get("enabled", False),
+    )
     for key in ("session_id", "ooc", "effective_mode"):
         if key in result:
             assembled[key] = result[key]
