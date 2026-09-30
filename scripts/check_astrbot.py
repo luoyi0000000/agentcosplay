@@ -12,6 +12,7 @@ import subprocess
 import sys
 import time
 from pathlib import Path
+from secrets import token_urlsafe
 from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 
@@ -40,7 +41,7 @@ async def run(directory):
         )
         lifecycle = TurnLifecycle(rt)
         token = Path(directory) / "token"
-        token.write_text("x" * 48)
+        token.write_text(token_urlsafe(32), encoding="ascii")
         adapter = AstrBotAdapter(
             "http://127.0.0.1:8765/mcp",
             token,
@@ -253,7 +254,7 @@ def main():
                 sock.bind(("127.0.0.1", 0))
                 port = sock.getsockname()[1]
             token = Path(directory) / "sdk-token"
-            token.write_text("synthetic-sdk-credential-12345678901234567890")
+            token.write_text(token_urlsafe(32), encoding="ascii")
             environment = dict(
                 os.environ,
                 CHARACTER_DATA_DIR=directory,

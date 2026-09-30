@@ -6,6 +6,7 @@
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from secrets import token_urlsafe
 from tempfile import TemporaryDirectory
 
 from character_runtime.identity import bind
@@ -199,8 +200,11 @@ async def http_capabilities(path: Path) -> None:
 
     storage = SQLiteStorage(path)
     resource = "http://127.0.0.1:8765/mcp"
-    owner_token = "synthetic-owner-token-for-local-check-only"
-    server = build_server(storage, local_owner="owner", token=owner_token, resource=resource)
+    # Test credentials are ephemeral; repository scans must not see fixed Bearer secrets.
+    # 测试凭据仅在运行时生成，避免仓库扫描识别出固定 Bearer 密钥。
+    owner_credential = token_urlsafe(32)
+    invalid_credential = token_urlsafe(32)
+    server = build_server(storage, local_owner="owner", token=owner_credential, resource=resource)
     app = http_app(server)
 
     def client(token):
@@ -211,8 +215,11 @@ async def http_capabilities(path: Path) -> None:
 
     try:
         async with app.router.lifespan_context(app):
+            async with client(invalid_credential) as invalid_http:
+                response = await invalid_http.post(resource, json={})
+                assert response.status_code == 401, "Invalid Bearer credential was accepted"
             async with (
-                client(owner_token) as http,
+                client(owner_credential) as http,
                 Client(streamable_http_client(resource, http_client=http)) as admin,
             ):
                 cid = (
@@ -291,7 +298,7 @@ async def http_capabilities(path: Path) -> None:
                 from character_runtime.host_client import HostBridge
 
                 credential_file = path.parent / "synthetic-host-token"
-                credential_file.write_text(owner_token, encoding="ascii")
+                credential_file.write_text(owner_credential, encoding="ascii")
                 credential_file.chmod(0o600)
                 bridge = HostBridge(resource, credential_file)
                 original_client = httpx2.AsyncClient
@@ -355,17 +362,19 @@ async def http_capabilities(path: Path) -> None:
                         opened["capability"], tid, "runtime_context", {"session_id": tid}
                     )
                     assert projection["stable_prefix"]
-                    for capability in ("", "invalid-capability"):
+                    for capability in ("", invalid_credential):
                         try:
                             await bridge.model_call(capability, tid, "character_read", {})
                         except (ValueError, RuntimeError) as error:
-                            assert owner_token not in str(error)
+                            assert owner_credential not in str(error)
                         else:
                             raise AssertionError("Host bridge fell back to owner authentication")
                 from character_runtime.auth import LocalTokenVerifier
 
-                discovery_token = LocalTokenVerifier(owner_token, "owner", resource).discovery_token
-                assert discovery_token != owner_token
+                discovery_token = LocalTokenVerifier(
+                    owner_credential, "owner", resource
+                ).discovery_token
+                assert discovery_token != owner_credential
                 async with (
                     client(discovery_token) as discovery_http,
                     Client(

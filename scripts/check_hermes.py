@@ -8,6 +8,7 @@ import json
 import sys
 from datetime import UTC, datetime
 from pathlib import Path
+from secrets import token_urlsafe
 from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -193,7 +194,7 @@ class Bridge:
 def main():
     with TemporaryDirectory() as directory:
         token = Path(directory) / "token"
-        token.write_text("x" * 48, encoding="ascii")
+        token.write_text(token_urlsafe(32), encoding="ascii")
         adapter = HermesAdapter(
             "http://127.0.0.1:8765/mcp",
             token,

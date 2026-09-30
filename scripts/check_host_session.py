@@ -84,8 +84,10 @@ def main():
         async def capture(self, tool, arguments, **kwargs):
             return arguments
 
-        with patch.object(HostBridge, "call", capture):
-            bridge = HostBridge("http://127.0.0.1:8765/mcp", Path("/synthetic/token"))
+        with TemporaryDirectory() as directory, patch.object(HostBridge, "call", capture):
+            # Mocked transport needs an OS-native absolute path, not a credential file.
+            # 模拟传输仅需要本机绝对路径，不需要创建凭据文件。
+            bridge = HostBridge("http://127.0.0.1:8765/mcp", Path(directory).resolve() / "token")
             result = await bridge.model_call("cap", "turn", "runtime_context", {})
             assert result.get("session_id") == "turn", "Current scope was not injected"
             result = await bridge.model_call(
@@ -166,7 +168,7 @@ def main():
         async def cli():
             adapter = HermesAdapter(
                 "http://127.0.0.1:8765/mcp",
-                Path("/synthetic/token"),
+                Path(tmp).resolve() / "token",
                 "hermes",
                 [],
                 cli_binding={
