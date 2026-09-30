@@ -1,0 +1,65 @@
+{
+  "additionalProperties": false,
+  "description": "Approval is bound to exact content and operation; never a reusable blanket bool.\n批准绑定精确正文和操作，不是可重复使用的无限制布尔许可。",
+  "properties": {
+    "explicit": {
+      "title": "Explicit",
+      "type": "boolean"
+    },
+    "scope": {
+      "default": "this_memory",
+      "enum": [
+        "this_span",
+        "this_memory",
+        "this_operation"
+      ],
+      "title": "Scope",
+      "type": "string"
+    },
+    "operation_id": {
+      "maxLength": 200,
+      "minLength": 1,
+      "title": "Operation Id",
+      "type": "string"
+    },
+    "content_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Content Sha256",
+      "type": "string"
+    },
+    "span_start": {
+      "anyOf": [
+        {
+          "minimum": 0,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Span Start"
+    },
+    "span_end": {
+      "anyOf": [
+        {
+          "minimum": 0,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Span End"
+    }
+  },
+  "required": [
+    "explicit",
+    "operation_id",
+    "content_sha256"
+  ],
+  "title": "StorageAuthorization",
+  "type": "object",
+  "$schema": "https://json-schema.org/draft/2020-12/schema"
+}

@@ -13,10 +13,18 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from character_runtime.auth import LocalTokenVerifier
+from character_runtime.context_models import (
+    ExpressionExecution,
+    ExpressionProjection,
+    GenerationExecution,
+    GenerationTask,
+    UniversalGenerationContext,
+)
 from character_runtime.hermes_adapter import HermesAdapter, register
 from character_runtime.identity import bind
 from character_runtime.lifecycle import HostCapabilities, TurnEnvelope, TurnLifecycle
-from character_runtime.models import CharacterDefinition
+from character_runtime.models import CharacterDefinition, VoiceProfile
+from character_runtime.persistence_models import GenerationRequest
 from character_runtime.runtime import Runtime
 from character_runtime.scope import ScopeResolver
 from character_runtime.storage import SQLiteStorage
@@ -108,6 +116,22 @@ def registration_checks(token, settings, env):
         register(ctx, Path(__file__).resolve().parents[1])
         assert "post_llm_call" in hooks
         assert skills["agentcosplay"].is_file()
+        assert "llm_request" in middleware
+        # Corrupted owned boundaries must not reach the provider through hook fail-open.
+        # 自有边界被破坏时，不得经宿主钩子的失败放行路径送到模型提供方。
+        assert middleware["llm_request"](
+            {
+                "messages": [
+                    {"role": "system", "content": "<agentcosplay-generation-context>private"}
+                ]
+            }
+        ) == {"request": {}}
+        with patch.object(
+            HermesAdapter, "generation_request", side_effect=ValueError("bad owned block")
+        ):
+            assert middleware["llm_request"](
+                {"messages": [{"role": "system", "content": "private"}]}
+            ) == {"request": {}}
         handler = middleware["tool_execution"]
 
         def downstream(args):
@@ -130,6 +154,20 @@ def registration_checks(token, settings, env):
             raise AssertionError("Native entry accepted an owner MCP credential")
 
 
+def sample_projection():
+    contract = ExpressionExecution(enabled=True, effective_voice=VoiceProfile(), policy={})
+    return UniversalGenerationContext(
+        identity={"character": "allowed"},
+        execution=GenerationExecution(
+            expression=ExpressionProjection(
+                contract=contract, directive=contract.render_directive()
+            )
+        ),
+        context={},
+        request=GenerationTask(session_id="runtime-turn", generation_request=GenerationRequest()),
+    )
+
+
 class Bridge:
     def __init__(self):
         self.calls = []
@@ -139,13 +177,14 @@ class Bridge:
         if tool == "host_prepare_turn":
             return {
                 "turn_id": "runtime-turn",
+                "session_id": "runtime-session",
                 "capability": "turn-cap",
-                "context": {"stable_prefix": "character", "temporary": {"memory": "allowed"}},
+                "context": {"generation_context": sample_projection().model_dump(mode="json")},
             }
         assert tool in {"host_observe_generation", "host_finalize_turn"}
         return {"state": "finalized", "delivery_state": "unknown"}
 
-    async def model_call(self, capability, turn_id, tool, arguments):
+    async def model_call(self, capability, turn_id, tool, arguments, **kwargs):
         assert (capability, turn_id) == ("turn-cap", "runtime-turn")
         self.calls.append((tool, arguments, {}))
         return {"stable_prefix": "character", "temporary": {"memory": "allowed"}}
@@ -216,6 +255,65 @@ def main():
             )
         )
         assert "character" in context and "allowed" in context
+        encoded_context = json.dumps(context)[1:-1]
+        native = {
+            "messages": [
+                {"role": "system", "content": "Host safety"},
+                {"role": "user", "content": "current task"},
+            ]
+        }
+        native["tools"] = [
+            {
+                "type": "function",
+                "function": {
+                    "name": "mcp__agentcosplay__runtime_context",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {"session_id": {"type": "string"}},
+                        "required": ["session_id"],
+                    },
+                },
+            }
+        ]
+        mapped = adapter.generation_request(native, session_id="s1", turn_id="t1")
+        assert mapped["tools"][0]["function"]["parameters"]["required"] == []
+        assert native["tools"][0]["function"]["parameters"]["required"] == ["session_id"]
+        assert native["messages"][0]["content"] == "Host safety"
+        assert context in mapped["messages"][1]["content"]
+        assert mapped["messages"][-1] == native["messages"][-1]
+        assert adapter.generation_request(mapped, session_id="s1", turn_id="t1") == mapped
+        for block_type in ("text", "input_text"):
+            blocks = {"messages": [dict(m) for m in mapped["messages"]]}
+            blocks["messages"][1]["content"] = [
+                {"type": block_type, "text": mapped["messages"][1]["content"].rstrip()}
+            ]
+            assert encoded_context not in json.dumps(
+                adapter.generation_request(blocks, session_id="unknown", turn_id="new")
+            )
+        for previous in (
+            mapped,
+            adapter.generation_request(
+                {"instructions": "Host safety", "input": []}, session_id="s1", turn_id="t1"
+            ),
+        ):
+            # Reused provider kwargs must not carry an earlier actor's projection.
+            # 复用提供方请求时，不得保留上一 Actor 的投影。
+            replaced = adapter.generation_request(previous, session_id="unknown", turn_id="new")
+            assert encoded_context not in json.dumps(replaced), "Previous actor context leaked"
+        for base in (
+            {"instructions": "safety", "input": []},
+            {"system": "safety", "messages": []},
+            {"system": [{"type": "text", "text": "safety"}], "messages": []},
+        ):
+            result = adapter.generation_request(base, session_id="s1", turn_id="t1")
+            assert encoded_context in json.dumps(result)
+            assert encoded_context not in json.dumps(base)
+        oversized_projection = "full-contract-" + "x" * 20000 + "-end"
+        large_turn = adapter.turns.get(("s1", "t1"))
+        large_turn.generation_context.identity = {"test": oversized_projection}
+        adapter.turns.put(("large", "turn"), large_turn)
+        result = adapter.generation_request(native, session_id="large", turn_id="turn")
+        assert oversized_projection in result["messages"][1]["content"]
         ingress = bridge.calls[0][1]["envelope"]
         assert ingress["chat_type"] == "group"
         assert ingress["text"] == "hello" and ingress["input_is_verbatim"]
@@ -279,7 +377,7 @@ def main():
         )
         missing = asyncio.run(adapter.tool("s2", "t2", "runtime_context", {}))
         assert not json.loads(missing)["ok"]
-        adapter.clear(session_id="s1")
+        adapter.clear(session_id="replacement", old_session_id="s1")
         assert not json.loads(asyncio.run(adapter.tool("s1", "t1", "runtime_context", {})))["ok"]
         before = len(bridge.calls)
         asyncio.run(adapter.observe(session_id="s1", turn_id="t1", assistant_response="late"))

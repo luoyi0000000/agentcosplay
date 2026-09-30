@@ -1,0 +1,105 @@
+{
+  "$defs": {
+    "InputEvidence": {
+      "description": "Source fidelity, not a claim about truth. / 源正文保真度，不是真实性声明。",
+      "enum": [
+        "verified_verbatim",
+        "transformed",
+        "unknown"
+      ],
+      "title": "InputEvidence",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Typed trusted ingress; Runtime resolves the participant.\n\n可信类型化入口，Runtime 解析真人身份。",
+  "properties": {
+    "host_id": {
+      "maxLength": 200,
+      "minLength": 1,
+      "title": "Host Id",
+      "type": "string"
+    },
+    "platform": {
+      "maxLength": 200,
+      "minLength": 1,
+      "title": "Platform",
+      "type": "string"
+    },
+    "actor_id": {
+      "maxLength": 200,
+      "minLength": 1,
+      "title": "Actor Id",
+      "type": "string"
+    },
+    "endpoint_id": {
+      "maxLength": 200,
+      "minLength": 1,
+      "title": "Endpoint Id",
+      "type": "string"
+    },
+    "chat_type": {
+      "enum": [
+        "dm",
+        "group"
+      ],
+      "title": "Chat Type",
+      "type": "string"
+    },
+    "native_session_id": {
+      "maxLength": 200,
+      "minLength": 1,
+      "title": "Native Session Id",
+      "type": "string"
+    },
+    "turn_id": {
+      "maxLength": 200,
+      "minLength": 1,
+      "title": "Turn Id",
+      "type": "string"
+    },
+    "message_id": {
+      "maxLength": 200,
+      "minLength": 1,
+      "title": "Message Id",
+      "type": "string"
+    },
+    "text": {
+      "maxLength": 64000,
+      "minLength": 1,
+      "title": "Text",
+      "type": "string"
+    },
+    "input_evidence": {
+      "$ref": "#/$defs/InputEvidence",
+      "default": "unknown"
+    },
+    "source_timestamp": {
+      "anyOf": [
+        {
+          "format": "date-time",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Source Timestamp"
+    }
+  },
+  "required": [
+    "host_id",
+    "platform",
+    "actor_id",
+    "endpoint_id",
+    "chat_type",
+    "native_session_id",
+    "turn_id",
+    "message_id",
+    "text"
+  ],
+  "title": "HostIngress",
+  "type": "object",
+  "$schema": "https://json-schema.org/draft/2020-12/schema"
+}

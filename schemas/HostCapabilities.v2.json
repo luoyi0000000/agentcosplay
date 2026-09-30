@@ -1,4 +1,17 @@
 {
+  "$defs": {
+    "GenerationSurface": {
+      "description": "Native fields share one logical authority position. / 原生字段共用一处逻辑权限位置。",
+      "enum": [
+        "instructions",
+        "system_text",
+        "system_blocks",
+        "system_message"
+      ],
+      "title": "GenerationSurface",
+      "type": "string"
+    }
+  },
   "additionalProperties": false,
   "description": "Declared capability is not authority; absent support stays false.\n\n能力声明不授予权限；未声明的能力默认不可用。",
   "properties": {
@@ -97,6 +110,19 @@
     "reliable_delivery_ack": {
       "default": false,
       "title": "Reliable Delivery Ack",
+      "type": "boolean"
+    },
+    "generation_surfaces": {
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/GenerationSurface"
+      },
+      "title": "Generation Surfaces",
+      "type": "array"
+    },
+    "tool_interception": {
+      "default": false,
+      "title": "Tool Interception",
       "type": "boolean"
     }
   },

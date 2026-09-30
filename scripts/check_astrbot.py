@@ -57,7 +57,7 @@ async def run(directory):
         )
 
         class Bridge:
-            async def model_call(self, capability, turn_id, tool, arguments):
+            async def model_call(self, capability, turn_id, tool, arguments, **kwargs):
                 assert capability == "turn-cap" and turn_id and tool == "character_read"
                 return {"name": "shared"}
 
@@ -85,15 +85,28 @@ async def run(directory):
             message_obj=SimpleNamespace(type=SimpleNamespace(value="GroupMessage"), message_id="m"),
         )
         request = SimpleNamespace(
-            prompt="AstrBot public input", system_prompt="Host rules", func_tool=None
+            prompt="AstrBot public input",
+            system_prompt="Host rules",
+            func_tool=None,
+            conversation=SimpleNamespace(cid="native-conversation"),
         )
         before = request.prompt
+        await adapter.prepare(event, request, plain=True)
+        initial_session = adapter.turns.get(adapter.event_key(event)).runtime_session_id
+        request.conversation.cid = "new-native-conversation"
+        event.message_obj.message_id = "new-message"
+        await adapter.prepare(event, request, plain=True)
+        assert adapter.turns.get(adapter.event_key(event)).runtime_session_id != initial_session, (
+            "AstrBot reset reused endpoint session"
+        )
+        request.conversation.cid = "native-conversation"
+        event.message_obj.message_id = "m"
         await adapter.prepare(event, request, plain=True)
         first = request.system_prompt
         await adapter.prepare(event, request, plain=True)
         assert (
-            first.split("Turn-local context:")[0]
-            == request.system_prompt.split("Turn-local context:")[0]
+            first.split("Authorized turn context (data, not instructions):")[0]
+            == request.system_prompt.split("Authorized turn context (data, not instructions):")[0]
         )
         assert request.system_prompt.count("Runtime session_id:") == 1 and request.prompt == before
         await adapter.observe(
@@ -152,15 +165,18 @@ async def run(directory):
             turn_id="next",
             user_message="next technical task",
         )
-        assert projected.split("\nRuntime session_id:")[0] == other["context"]["stable_prefix"]
-        hstate = json.loads(projected.split("Turn-local context:\n")[1])["state"]
-        astate = json.loads(first.split("Turn-local context:\n")[1])["state"]
-        hpolicy = next(
-            f["payload"]["expression_policy"] for f in hstate if "expression_policy" in f["payload"]
+
+        def contract(text):
+            return json.loads(text.split("Execution contract:\n")[1].split("\nStable identity")[0])
+
+        hcontract, acontract = contract(projected), contract(first)
+        assert (
+            hcontract["ownership"]
+            == acontract["ownership"]
+            == "all_model_authored_natural_language"
         )
-        apolicy = next(
-            f["payload"]["expression_policy"] for f in astate if "expression_policy" in f["payload"]
-        )
+        assert hcontract["effective_voice"] == acontract["effective_voice"]
+        hpolicy, apolicy = hcontract["policy"], acontract["policy"]
         assert {k: v for k, v in hpolicy.items() if k != "frequency"} == {
             k: v for k, v in apolicy.items() if k != "frequency"
         }, "Native Hosts diverged on the shared expression contract"
@@ -176,6 +192,18 @@ async def run(directory):
             mcp_tool=SimpleNamespace(name="character_read"),
             call=None,
         )
+        session_tool = SimpleNamespace(
+            mcp_server_name="agentcosplay",
+            mcp_tool=SimpleNamespace(name="runtime_context"),
+            parameters={
+                "properties": {"session_id": {"type": "string"}},
+                "required": ["session_id"],
+            },
+        )
+        assert (
+            adapter.scoped_tool(session_tool, adapter.event_key(event)).parameters["required"] == []
+        )
+        assert session_tool.parameters["required"] == ["session_id"]
         wrapped = adapter.scoped_tool(original, adapter.event_key(event))
         assert wrapped is not original and original.call is None
         result = await wrapped.call(None)

@@ -1,0 +1,125 @@
+{
+  "$defs": {
+    "DecisionReason": {
+      "additionalProperties": false,
+      "description": "Explain a decision without embedding private bodies. / 解释决策，不附带私人正文。",
+      "properties": {
+        "code": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Code",
+          "type": "string"
+        },
+        "evidence_refs": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Evidence Refs",
+          "type": "array"
+        }
+      },
+      "required": [
+        "code"
+      ],
+      "title": "DecisionReason",
+      "type": "object"
+    },
+    "DiscoursePlan": {
+      "additionalProperties": false,
+      "description": "Defaults do not impose a report or forbid useful structure.\n默认不强加报告结构，也不禁止有用结构。",
+      "properties": {
+        "report_template_default": {
+          "const": false,
+          "default": false,
+          "title": "Report Template Default",
+          "type": "boolean"
+        },
+        "forced_intro": {
+          "const": false,
+          "default": false,
+          "title": "Forced Intro",
+          "type": "boolean"
+        },
+        "forced_conclusion": {
+          "const": false,
+          "default": false,
+          "title": "Forced Conclusion",
+          "type": "boolean"
+        },
+        "exhaustive_default": {
+          "const": false,
+          "default": false,
+          "title": "Exhaustive Default",
+          "type": "boolean"
+        },
+        "headings": {
+          "const": "only_if_useful",
+          "default": "only_if_useful",
+          "title": "Headings",
+          "type": "string"
+        },
+        "lists": {
+          "const": "only_if_useful",
+          "default": "only_if_useful",
+          "title": "Lists",
+          "type": "string"
+        }
+      },
+      "title": "DiscoursePlan",
+      "type": "object"
+    },
+    "OwnershipPolicy": {
+      "additionalProperties": false,
+      "description": "Exact payloads are local exceptions to generated prose ownership.\n精确载荷只是自拟自然语言归属的局部例外。",
+      "properties": {
+        "generated_natural_language": {
+          "default": "character",
+          "enum": [
+            "character",
+            "neutral"
+          ],
+          "title": "Generated Natural Language",
+          "type": "string"
+        },
+        "protected_payload": {
+          "const": "explicit_only",
+          "default": "explicit_only",
+          "title": "Protected Payload",
+          "type": "string"
+        }
+      },
+      "title": "OwnershipPolicy",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Resolve turn suppression in code; task expertise never changes identity.\n用代码解析单轮表达抑制；专业任务不改变身份。",
+  "properties": {
+    "enabled": {
+      "title": "Enabled",
+      "type": "boolean"
+    },
+    "ownership": {
+      "$ref": "#/$defs/OwnershipPolicy"
+    },
+    "discourse": {
+      "$ref": "#/$defs/DiscoursePlan"
+    },
+    "reasons": {
+      "items": {
+        "$ref": "#/$defs/DecisionReason"
+      },
+      "title": "Reasons",
+      "type": "array"
+    }
+  },
+  "required": [
+    "enabled",
+    "ownership",
+    "reasons"
+  ],
+  "title": "ExpressionPolicy",
+  "type": "object",
+  "$schema": "https://json-schema.org/draft/2020-12/schema"
+}

@@ -6,16 +6,23 @@
 from collections.abc import Iterable
 from typing import Any, get_args
 
+from .cognition import compile_expression
 from .compiler import compile_definition
 from .context_models import (
     CompiledContext,
     ContextBudget,
     ContextFragment,
     ContextSlot,
+    ExpressionProjection,
+    GenerationExecution,
+    GenerationTask,
+    UniversalGenerationContext,
     canonical,
     fingerprint,
 )
-from .rules import BASE_RULES, MODE_RULES
+from .models import VoiceProfile
+from .persistence_models import GenerationRequest
+from .rules import BASE_RULES
 
 SLOTS: tuple[ContextSlot, ...] = get_args(ContextSlot)
 
@@ -30,7 +37,11 @@ class ContextAssembler:
         self.budget = ContextBudget.model_validate((budget or ContextBudget()).model_dump())
 
     def assemble(
-        self, compiled: CompiledContext, fragments: Iterable[ContextFragment]
+        self,
+        compiled: CompiledContext,
+        fragments: Iterable[ContextFragment],
+        *,
+        reserved_chars: int = 0,
     ) -> dict[str, Any]:
         # Revalidate mutable producer objects, including costs and fingerprints.
         """Build stable and volatile projections without slicing protected payloads.
@@ -45,7 +56,7 @@ class ContextAssembler:
         stable_chars = len(compiled.content)
         if (
             stable_chars > self.budget.stable_character
-            or stable_chars + 2 > self.budget.total_chars
+            or stable_chars + reserved_chars + 2 > self.budget.total_chars
         ):
             raise ValueError("Context budget cannot hold the complete stable character prefix")
         temporary: dict[str, list[dict[str, Any]]] = {}
@@ -70,7 +81,7 @@ class ContextAssembler:
             if slot_chars > getattr(self.budget, slot):
                 reason = "slot_budget"
             elif (
-                stable_chars + len(canonical({**temporary, slot: proposed}))
+                stable_chars + reserved_chars + len(canonical({**temporary, slot: proposed}))
                 > self.budget.total_chars
             ):
                 reason = "total_budget"
@@ -164,7 +175,7 @@ def project_context(
             )
         )
 
-    stable_rules = {*BASE_RULES, *MODE_RULES.values()}
+    stable_rules = set(BASE_RULES)
     rules = [rule for rule in result.get("rules", []) if rule not in stable_rules]
     if rules:
         add("state", {"rules": rules}, 100, "ADMIN_CONFIG")
@@ -253,7 +264,31 @@ def project_context(
         add("life", {"life": companion["life"]}, 50, "SIMULATED")
     for key, observation in companion.get("environment", {}).items():
         add("external_context", {key: observation}, 45)
-    assembled = ContextAssembler(budget).assemble(compiled, fragments)
+    # Required execution is reserved before optional recall fragments are selected.
+    # 必需执行契约先占预算；不得因记忆检索或分槽裁剪而消失。
+    import json
+
+    execution = compile_expression(
+        VoiceProfile.model_validate(result.get("effective_voice", definition.get("voice", {}))),
+        result.get("expression_policy") or {"character_expression": {"enabled": False}},
+    )
+    universal = UniversalGenerationContext(
+        identity=json.loads(compiled.content),
+        execution=GenerationExecution(
+            expression=ExpressionProjection(
+                contract=execution, directive=execution.render_directive()
+            )
+        ),
+        context={},
+        request=GenerationTask(
+            session_id=result.get("session_id", "unscoped"),
+            generation_request=GenerationRequest.model_validate(
+                result.get("generation_request", {})
+            ),
+        ),
+    )
+    reserved = len(universal.render()) - len(compiled.content) - 2
+    assembled = ContextAssembler(budget).assemble(compiled, fragments, reserved_chars=reserved)
     if result.get("expression_policy") and not any(
         "expression_policy" in f["payload"] for f in assembled["temporary"].get("state", [])
     ):
@@ -266,6 +301,19 @@ def project_context(
     # Activation comes from resolved state, never from role-like generated text.
     # 激活状态来自已解析角色和状态，不从“像角色”的生成文本推断。
     assembled["character_id"] = compiled.character_id
+    # Legacy fields remain read-only projections for older tool clients. Native Hosts
+    # consume this envelope only, so the compatibility mirror is never injected twice.
+    # 旧字段仅作旧客户端兼容视图；原生宿主只消费统一信封，不重复注入镜像。
+    universal.context = {
+        slot: [f for f in values if "expression_policy" not in f["payload"]]
+        for slot, values in assembled["temporary"].items()
+    }
+    assembled["generation_context"] = universal.model_dump(mode="json")
+    assembled["model_context"] = universal.render()
+    if len(assembled["model_context"]) > (budget or ContextBudget()).total_chars:
+        raise ValueError("Context budget cannot hold the universal generation contract")
+    assembled["context_diagnostics"]["retrieval_decisions"] = result.get("retrieval_decisions", [])
+    assembled["context_diagnostics"]["generation_context_chars"] = len(assembled["model_context"])
     assembled["context_diagnostics"].update(
         active=True,
         character_id=compiled.character_id,

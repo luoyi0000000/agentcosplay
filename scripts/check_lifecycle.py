@@ -14,6 +14,7 @@ from character_runtime.models import CharacterDefinition, VoiceProfile
 from character_runtime.operations import fingerprint
 from character_runtime.persistence_models import GenerationRequest
 from character_runtime.runtime import Runtime
+from character_runtime.safety import SensitivityAssessment
 from character_runtime.scope import ScopeResolver
 from character_runtime.storage import SQLiteStorage
 
@@ -200,6 +201,14 @@ def main():
         assert len(scoped.knowledge.records("raw_event", cid)) == 1
         assert "derived_turn_signals" in str(prepared["context"]["temporary"])
         reject(lambda: lifecycle.finalize(tid, "finish"))
+
+        class Classifier:
+            def assess(self, text, context):
+                return SensitivityAssessment(authentication=1 if text == "opaque-value" else 0)
+
+        rt.memory.safety_classifier = Classifier()
+        reject(lambda: lifecycle.observe_generation(tid, "rejected", "opaque-value"))
+        assert scoped.storage.get("owner", "turn_lifecycle", tid)["state"] == "prepared"
         result = lifecycle.observe_generation(tid, "response", "private generated text owo")
         assert result["state"] == "generated" and result["delivery_state"] == "unknown"
         assert lifecycle.observe_generation(tid, "response", "private generated text owo") == result

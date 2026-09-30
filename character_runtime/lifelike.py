@@ -111,7 +111,7 @@ class Lifelike:
         events = self.k.personal_evidence(cid, effect.evidence_refs)
         if any(e.source_kind in {"SIMULATED", "PLANNED"} for e in events):
             raise ValueError("Planned or simulated interactions cannot supply interpersonal affect")
-        check_content(effect.model_dump_json())
+        check_content(effect.model_dump_json(), classifier=self.k.memory.safety_classifier)
         state = self.advance(cid)
         if set(effect.evidence_refs) & set(state.affect.evidence_refs):
             raise ValueError("Affect evidence was already applied")
@@ -183,7 +183,7 @@ class Lifelike:
             raise ValueError("Perception timestamps must be current")
         if observation.expires_at - observation.observed_at > timedelta(days=1):
             raise ValueError("Perception freshness is limited to one day")
-        check_content(observation.model_dump_json())
+        check_content(observation.model_dump_json(), classifier=self.k.memory.safety_classifier)
         if observation.recognized == "SELF":
             prototype = self.k.storage.get(
                 self.k.owner, "visual_prototype", observation.prototype_id or ""
@@ -224,7 +224,7 @@ class Lifelike:
             )
         if self.k.storage.get(self.k.owner, "visual_prototype", proposal.id):
             raise ValueError("Prototype already exists; use an issued update grant")
-        check_content(proposal.model_dump_json())
+        check_content(proposal.model_dump_json(), classifier=self.k.memory.safety_classifier)
         proposal.status = "trusted" if explicit else "candidate"
         proposal.authority = "USER_EXPLICIT" if explicit else "HOST_OBSERVED"
         self.k.storage.put(

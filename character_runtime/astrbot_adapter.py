@@ -3,34 +3,35 @@
 AstrBot 官方生命周期桥接；不持有数据库、模型，也不猜测投递成功。
 """
 
-import hashlib
 import json
-from collections import OrderedDict
 from copy import copy
 from pathlib import Path
 from types import MethodType
-from typing import Any
+from typing import Any, Literal, cast
 
 from mcp.types import CallToolResult, TextContent
 
-from .host_client import HostBridge
+from .host_protocol import (
+    GenerationBinding,
+    GenerationSurface,
+    HostIngress,
+    InputEvidence,
+    ProjectionMapper,
+    ScopedToolRouter,
+    UniversalHostAdapter,
+)
+from .host_protocol import stable_host_key as _key
 
 
-def _key(*parts: str) -> str:
-    return hashlib.sha256(json.dumps(parts, ensure_ascii=True).encode()).hexdigest()
-
-
-class AstrBotAdapter:
+class AstrBotAdapter(UniversalHostAdapter):
     """Map exact platform-instance routes and per-event capabilities to one remote Runtime.
 
     将精确的平台实例路由与单事件能力令牌映射到同一个 Runtime，不维护角色状态副本。
     """
 
     def __init__(self, url: str, token_file: Path, host: str, routes: list[dict[str, str]]) -> None:
-        self.bridge = HostBridge(url, token_file)
-        if not host or len(host) > 100:
-            raise ValueError("Stable Host ID required")
-        self.host = host
+        super().__init__(url, token_file, host)
+        self.capabilities.generation_surfaces = (GenerationSurface.SYSTEM_TEXT,)
         self.routes: dict[tuple[str, str, str], dict[str, str]] = {}
         for route in routes:
             key = (route["platform_id"], route["session_id"], route["kind"])
@@ -43,18 +44,20 @@ class AstrBotAdapter:
             ):
                 raise ValueError("Explicit unique AstrBot routes required")
             self.routes[key] = dict(route)
-        self.turns: OrderedDict[str, dict[str, Any]] = OrderedDict()
 
-    def event_key(self, event: Any) -> str:
+    def event_key(self, event: Any) -> tuple[str, str]:
         """Bind callback identity to actor, endpoint and source message, never a nickname.
 
         回调身份绑定 Actor、Endpoint 和源消息，不使用昵称猜测身份。
         """
-        return _key(
-            event.get_platform_id(),
-            event.get_session_id(),
-            event.get_sender_id(),
-            str(event.message_obj.message_id),
+        return (
+            _key(event.get_platform_id(), event.get_session_id()),
+            _key(
+                event.get_platform_id(),
+                event.get_session_id(),
+                event.get_sender_id(),
+                str(event.message_obj.message_id),
+            ),
         )
 
     async def prepare(self, event: Any, request: Any, *, plain: bool) -> None:
@@ -91,53 +94,41 @@ class AstrBotAdapter:
         if not event.get_sender_id() or not event.message_obj.message_id:
             raise ValueError("Verified sender and message ID required")
         key = self.event_key(event)
-        self.turns.pop(key, None)
+        self.turns.discard(key)
+        # Endpoint identifies the audience, not the native conversation lifetime.
+        # Endpoint 标识受众，不代表原生会话生命周期；重置后必须使用新的 conversation ID。
+        conversation = getattr(request, "conversation", None)
+        native_session = getattr(conversation, "cid", None) or getattr(request, "session_id", None)
+        if not isinstance(native_session, str) or not native_session.strip():
+            raise ValueError("Authoritative AstrBot conversation ID required")
         text = request.prompt or event.get_message_str()
-        prepared = await self.bridge.call(
-            "host_prepare_turn",
-            {
-                "envelope": {
-                    "host_id": self.host,
-                    "platform": route["runtime_platform"],
-                    "actor_id": event.get_sender_id(),
-                    "endpoint_id": route["endpoint_id"],
-                    "chat_type": kind,
-                    "session_id": _key(event.get_platform_id(), event.get_session_id()),
-                    "turn_id": key,
-                    "message_id": str(event.message_obj.message_id),
-                    "text": text,
-                    "input_is_verbatim": plain and text == event.get_message_str(),
-                    # AstrBotMessage.timestamp defaults to receipt time, not attested source time.
-                    # AstrBotMessage.timestamp 默认为接收时钟，不能冒充已证实的源时间。
-                    "timestamp": None,
-                },
-                "capabilities": {
-                    "pre_generation": True,
-                    "post_generation": True,
-                    "participant_identity": True,
-                    "group_identity": True,
-                    "reliable_delivery_ack": False,
-                },
-            },
-        )
-        projection = prepared["context"]
-        suffix = (
-            "\n"
-            + projection["stable_prefix"]
-            + "\nRuntime session_id: "
-            + prepared["turn_id"]
-            + "\nTurn-local context:\n"
-            + json.dumps(projection["temporary"], ensure_ascii=False)
+        turn = await self.prepare_turn(
+            key,
+            HostIngress(
+                host_id=self.host,
+                platform=route["runtime_platform"],
+                actor_id=event.get_sender_id(),
+                endpoint_id=route["endpoint_id"],
+                chat_type=cast(Literal["dm", "group"], kind),
+                native_session_id=_key(key[0], native_session),
+                turn_id=key[1],
+                message_id=str(event.message_obj.message_id),
+                text=text,
+                input_evidence=InputEvidence.VERIFIED_VERBATIM
+                if plain and text == event.get_message_str()
+                else InputEvidence.TRANSFORMED,
+                # SDK receipt time is not attested source time. / SDK 接收时间不冒充源时间。
+                source_timestamp=None,
+            ),
         )
         base = request.system_prompt or ""
-        request.system_prompt = base + suffix
-        request._agentcosplay_projection = suffix
-        self.turns[key] = {
-            "capability": prepared["capability"],
-            "turn_id": prepared["turn_id"],
-        }
-        while len(self.turns) > 128:
-            self.turns.popitem(last=False)
+        mapped = ProjectionMapper.apply(
+            {"system": base},
+            turn.generation_context,
+            GenerationBinding(surface=GenerationSurface.SYSTEM_TEXT),
+        )["system"]
+        request.system_prompt = mapped
+        request._agentcosplay_projection = mapped[len(base) :]
         if request.func_tool is not None:
             # Clone the request's tool list; never mutate globally shared MCP tools or credentials.
             # 复制本请求工具列表，不修改全局共享 MCP 工具或凭据。
@@ -146,7 +137,7 @@ class AstrBotAdapter:
                 self.scoped_tool(tool, key) for tool in request.func_tool.tools
             ]
 
-    def scoped_tool(self, tool: Any, key: str) -> Any:
+    def scoped_tool(self, tool: Any, key: tuple[str, str]) -> Any:
         """Wrap existing MCP tools with the current capability; never duplicate tool schemas.
 
         以当前能力令牌包装已有 MCP 工具，不另建工具 Schema，也不回退管理凭据。
@@ -156,16 +147,11 @@ class AstrBotAdapter:
         wrapped = copy(tool)
         wrapped._agentcosplay_original_tool = tool
         name = tool.mcp_tool.name
+        if isinstance(getattr(tool, "parameters", None), dict):
+            wrapped.parameters = ScopedToolRouter.schema(name, tool.parameters)
 
         async def call(_self: Any, context: Any, **kwargs: Any) -> CallToolResult:
-            try:
-                turn = self.turns[key]
-                result = await self.bridge.model_call(
-                    turn["capability"], turn["turn_id"], name, kwargs
-                )
-                envelope = {"ok": True, "result": result}
-            except Exception:
-                envelope = {"ok": False, "error": "Verified Runtime turn required"}
+            envelope = await self.execute_tool(key, name, kwargs)
             # AstrBot dispatches MCPTool results by SDK type, not JSON string content.
             # AstrBot 按宿主 SDK 类型分派 MCPTool 结果，不能返回普通 JSON 字符串。
             return CallToolResult(
@@ -180,21 +166,4 @@ class AstrBotAdapter:
 
         只观察 completion_text；不保存推理，不冒充最终装饰内容或投递回执。
         """
-        turn = self.turns.get(self.event_key(event))
-        if not turn:
-            return
-        await self.bridge.call(
-            "host_observe_generation",
-            {
-                "turn_id": turn["turn_id"],
-                "operation_id": _key(turn["turn_id"], "generation"),
-                "text": response.completion_text,
-            },
-        )
-        await self.bridge.call(
-            "host_finalize_turn",
-            {
-                "turn_id": turn["turn_id"],
-                "operation_id": _key(turn["turn_id"], "finalize"),
-            },
-        )
+        await self.observe_turn(self.event_key(event), response.completion_text)

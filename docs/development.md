@@ -44,3 +44,7 @@ Hermes checks exercise synthetic official-hook contracts plus real Runtime/MCP t
 Hermes 检查覆盖合成官方钩子契约，`check_scope` 使用真实 Runtime/MCP 传输；这些不代表已完成真实 Hermes 模型和平台验收。官方钩子 Adapter 不支持最终投递确认。
 
 上传仅在用户明确批准后执行。API 传输必须逐个比较远端 blob SHA 与本地 Git 对象 SHA，再比较完整 tree；只有分支指针更新成功不足以证明内容完整。大文件不得经过可能截断的终端展示输出。读取远端后再次验证锁文件和品牌图片。
+
+`python -m scripts.check_host_session` verifies persistent session mapping, restart recovery, native ID isolation, scoped tool injection, OOC/switch continuity and explicit rotation/invalidation using synthetic local storage. Run it with the existing Host protocol, scope and native binding checks; synthetic checks do not certify real QQ/Telegram/CLI transports.
+
+该检查使用合成本地存储验证持久映射、重启恢复、原生 ID 隔离、工具权限自动补齐、OOC/切换延续及显式轮换/注销；与已有协议、Scope 和原生绑定检查共同运行，不能冒充真实 QQ/TG/CLI 平台测试。

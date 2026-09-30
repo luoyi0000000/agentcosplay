@@ -37,7 +37,10 @@ def turn_windows(runtime: "Runtime", character_id: str, session_id: str) -> dict
         if turn.get("state") == "ambient" and not turn.get("erased")
         for event_id in turn.get("event_ids", [])
     }
-    current = next((turn for turn in lifecycle if turn["id"] == session_id), {})
+    # Use the authenticated turn for current-input signals, not the persistent conversation.
+    # 当前输入信号使用已认证 Turn，不能以持久会话 ID 查找回合证据。
+    current_turn_id = runtime.actor.id if runtime.actor else session_id
+    current = next((turn for turn in lifecycle if turn["id"] == current_turn_id), {})
     current_ids = set(current.get("event_ids", []))
     # ponytail: scan authorized rows; add a scoped received_at index when histories grow.
     # 仅扫描授权后的记录；历史变大时再增加带作用域的接收时间索引。
@@ -252,8 +255,8 @@ class ConversationDelivery:
         from .proactive import contact_limit
         from .scope import ScopeResolver
 
-        check_content(response.model_dump_json())
-        check_content(request.model_dump_json())
+        check_content(response.model_dump_json(), classifier=self.rt.memory.safety_classifier)
+        check_content(request.model_dump_json(), classifier=self.rt.memory.safety_classifier)
         ScopeResolver._ids(operation_id)
         with self.rt.storage.transaction():
             scoped = self.rt.for_turn(turn_id)
@@ -494,8 +497,8 @@ class ConversationDelivery:
                     or len(delivery_reference) > 1000
                 )
                 try:
-                    check_content(visible_content)
-                    check_content(delivery_reference)
+                    check_content(visible_content, classifier=self.rt.memory.safety_classifier)
+                    check_content(delivery_reference, classifier=self.rt.memory.safety_classifier)
                 except ValueError:
                     redacted = True
                 event_id = fingerprint([plan_id, segment_index, "visible"])

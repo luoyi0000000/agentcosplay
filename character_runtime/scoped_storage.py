@@ -135,7 +135,11 @@ class ScopedStorage:
         """Read only this turn's audience and character. / 仅读取本轮受众和角色记录。"""
         with self.transaction():
             if collection == "session":
-                if owner != self.owner or key != self.actor.id or self.public_state:
+                if (
+                    owner != self.owner
+                    or key not in {self.actor.id, self.actor.session_id}
+                    or self.public_state
+                ):
                     return None
                 # Session modes survive new turns; actor identity never comes from that row.
                 # 会话模式跨轮次保留；Actor 身份始终来自当前已验证 Turn。
@@ -168,7 +172,7 @@ class ScopedStorage:
             if collection == "session":
                 if (
                     owner != self.owner
-                    or key != self.actor.id
+                    or key not in {self.actor.id, self.actor.session_id}
                     or value.get("character_id") != self.actor.character_id
                     or value.get("identity_binding") != self.actor.identity_binding
                     or not value.get("identity_verified")
@@ -220,6 +224,11 @@ class ScopedStorage:
                 raise ValueError("Deletion is outside the active character")
             self.base.delete(namespace, bucket, key)
 
+    @property
+    def in_transaction(self) -> bool:
+        """Use the authoritative store's transaction boundary. / 使用权威存储的事务边界。"""
+        return self.base.in_transaction
+
     def _memory(self, owner: str, cid: str, scope: MemoryScope | None) -> str:
         if cid != self.actor.character_id or (scope is not None and scope != self.memory_scope):
             raise ValueError("Memory audience cannot be changed by the caller")
@@ -258,6 +267,32 @@ class ScopedStorage:
                     scope=self.memory_scope,
                 )
             ]
+
+    def memory_eligible_ids(
+        self,
+        owner: str,
+        character_id: str,
+        *,
+        session_id: str | None,
+        real: bool,
+        at: datetime,
+        include_archived: bool = False,
+        scope: MemoryScope | None = None,
+    ) -> builtins.list[str]:
+        """Resolve the complete authorized index population before semantic ranking.
+        在语义排序前解析完整的已授权索引集合。
+        """
+        with self.transaction():
+            ns = self._memory(owner, character_id, scope)
+            return self.base.memory_eligible_ids(
+                ns,
+                character_id,
+                session_id=session_id,
+                real=real,
+                at=at,
+                include_archived=include_archived,
+                scope=self.memory_scope,
+            )
 
     def memory_window(
         self,

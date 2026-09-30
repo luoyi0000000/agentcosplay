@@ -10,9 +10,10 @@ from typing import Any, Literal
 from .characters import Characters
 from .cognition import window
 from .models import Candidate, Memory, MemoryScope, new_id, now
+from .operations import fingerprint
 from .persistence_models import GenerationRequest, MemoryUseDecision, RecallRequest
-from .retrieval import score, tokens
-from .safety import check_content
+from .retrieval import RetrievalSignals, SemanticHit, SemanticIndex, rank, rrf, tokens
+from .safety import SafetyContext, SensitivityClassifier, StorageAuthorization, check_content
 from .storage import Storage
 
 
@@ -30,14 +31,53 @@ class Memories:
         clock: Callable[[], datetime] = now,
         *,
         scope: MemoryScope | None = None,
+        semantic_index: SemanticIndex | None = None,
+        safety_classifier: SensitivityClassifier | None = None,
     ) -> None:
         self.storage, self.owner, self.characters = storage, owner, characters
         self.clock = clock
+        self.semantic_index = semantic_index
+        self.safety_classifier = safety_classifier
+        self.retrieval_diagnostics: list[dict[str, Any]] = []
         self.scope = (
             MemoryScope.model_validate(scope.model_dump())
             if scope
             else MemoryScope(kind="PARTICIPANT_CHARACTER", participant_id=owner)
         )
+
+    def index_namespace(self, character_id: str) -> str:
+        """Bind an optional derived index to owner, character and audience.
+        将可选派生索引绑定 Owner、角色和受众。
+        """
+        return fingerprint([self.owner, character_id, self.scope.model_dump()])
+
+    def rebuild_semantic(self, character_id: str) -> int:
+        """Refresh an optional derived index from committed, authorized records only.
+
+        只从已提交且授权的记录刷新可选派生索引；事务回滚不得留下未提交正文。
+        """
+        if self.semantic_index is None:
+            return 0
+        if self.storage.in_transaction:
+            raise ValueError("Semantic rebuild requires a committed Runtime boundary")
+        with self.storage.transaction():
+            self.characters.get(character_id)
+            records = [
+                Memory.model_validate(v)
+                for v in self.storage.list(self.owner, "memory")
+                if v.get("character_id") == character_id
+            ]
+            records = [m for m in records if self.authorized(m)]
+            # ponytail: refresh holds the storage lock; use bounded local providers.
+            # 索引重建持有存储锁；需要远程长任务时升级为持久化同步队列。
+            for memory in records:
+                if memory.status == "forgotten":
+                    self.semantic_index.remove(self.index_namespace(character_id), memory.id)
+                else:
+                    self.semantic_index.upsert(
+                        self.index_namespace(character_id), memory.id, memory.content
+                    )
+        return len(records)
 
     def authorized(self, memory: Memory) -> bool:
         """Authorize before reading or mutating a record. / 读取或修改前先检查受众。"""
@@ -58,6 +98,11 @@ class Memories:
             ):
                 raise ValueError("Memory ID belongs to another audience or character")
             self.storage.put(self.owner, "memory", checked.id, checked.model_dump(mode="json"))
+            if self.semantic_index is not None:
+                namespace = self.index_namespace(checked.character_id)
+                if checked.status == "forgotten":
+                    self.semantic_index.remove(namespace, checked.id)
+
         return checked
 
     def owned(self, character_id: str, memory_id: str) -> Memory:
@@ -82,7 +127,7 @@ class Memories:
         session_id: str | None = None,
         *,
         turn_id: str | None = None,
-        confirmed: bool = False,
+        authorization: StorageAuthorization | None = None,
     ) -> Memory:
         """Store a validated memory candidate without treating its body as raw evidence.
 
@@ -90,7 +135,12 @@ class Memories:
         """
 
         self.characters.get(character_id)
-        check_content(candidate.content, confirmed=confirmed)
+        safety = check_content(
+            candidate.content,
+            context=SafetyContext(operation_id=turn_id or "default"),
+            authorization=authorization,
+            classifier=self.safety_classifier,
+        )
         candidate = Candidate.model_validate(candidate.model_dump())
         if candidate.kind == "real_user":
             raise ValueError("Use explicit promotion to store real-user facts")
@@ -111,7 +161,11 @@ class Memories:
             Memory(
                 owner=self.owner,
                 record_scope=self.scope,
-                sensitivity="public" if self.scope.kind == "ENDPOINT_CHARACTER" else "private",
+                sensitivity="sensitive"
+                if safety.assessment.sensitive
+                else "public"
+                if self.scope.kind == "ENDPOINT_CHARACTER"
+                else "private",
                 character_id=character_id,
                 kind=kind,
                 session_id=session_id if kind == "session" else None,
@@ -140,6 +194,7 @@ class Memories:
         active_goals: list[str] | None = None,
         include_archived: bool = False,
         request: RecallRequest | None = None,
+        generation: GenerationRequest | None = None,
     ) -> list[Memory]:
         """Rank bounded authorized candidates; a high score does not establish truth.
 
@@ -154,20 +209,12 @@ class Memories:
         if any(len(text) > 4000 for text in (relationship, current_topic, *topics, *goals)):
             raise ValueError("Recall hints must be at most 4000 characters each")
         clock = self.clock()
-        retrieval_query = " ".join(
-            (
-                query,
-                current_topic[:800],
-                relationship[:400],
-                *[text[:160] for text in topics],
-                *[text[:160] for text in goals],
-            )
-        )[:8000]
+        include_archived = include_archived or bool(request and request.include_archived)
         with self.storage.transaction():
             candidates = self.storage.memory_candidates(
                 self.owner,
                 character_id,
-                retrieval_query,
+                query,
                 session_id=session_id,
                 real=real,
                 at=clock,
@@ -205,25 +252,114 @@ class Memories:
                         (r, rank) for r, rank in candidates if r.get("source") == "simulated_life"
                     ]
                 limit = request.limit
-            ranked: list[tuple[float, Memory]] = []
-            for data, fts in candidates:
+            # All backend rankings are scoped before search; results are rechecked against SQL.
+            # 后端先限制范围再检索；返回 ID 仍须通过 SQL 允许列表复核。
+            allowed = tuple(
+                self.storage.memory_eligible_ids(
+                    self.owner,
+                    character_id,
+                    session_id=session_id,
+                    real=real,
+                    at=clock,
+                    include_archived=include_archived,
+                    scope=self.scope,
+                )
+            )
+            allowed_set = set(allowed)
+            semantic_ids: list[str] = []
+            if self.semantic_index is not None and query and request is None:
+                hits = self.semantic_index.search(
+                    self.index_namespace(character_id), query, allowed_ids=allowed, limit=256
+                )
+                semantic_ids = list(
+                    dict.fromkeys(
+                        SemanticHit.model_validate(h.model_dump()).item_id
+                        for h in hits[:256]
+                        if h.item_id in allowed_set
+                    )
+                )
+            by_id = {data["id"]: data for data, _ in candidates}
+            lexical = [
+                data["id"]
+                for data, weight in sorted(candidates, key=lambda pair: (-pair[1], pair[0]["id"]))
+                if weight > 0
+            ]
+            for mid in semantic_ids:
+                if mid not in by_id:
+                    data = self.storage.get(self.owner, "memory", mid)
+                    if data:
+                        by_id[mid] = data
+            if request is not None:
+                allowed_set.intersection_update(by_id)
+                allowed = tuple(sorted(allowed_set))
+            fused = rrf(lexical, semantic_ids)
+            hints: dict[str, set[str]] = {}
+            for key, queries in (
+                ("current_topic", (current_topic,)),
+                ("unfinished_topic", topics),
+                ("active_goal", goals),
+            ):
+                hints[key] = set()
+                for hint in filter(None, queries):
+                    matches = self.storage.memory_candidates(
+                        self.owner,
+                        character_id,
+                        hint,
+                        session_id=session_id,
+                        real=real,
+                        at=clock,
+                        include_archived=include_archived,
+                        scope=self.scope,
+                    )
+                    hints[key].update(data["id"] for data, weight in matches if weight > 0)
+                    if self.semantic_index is not None:
+                        hints[key].update(
+                            hit.item_id
+                            for hit in self.semantic_index.search(
+                                self.index_namespace(character_id),
+                                hint,
+                                allowed_ids=allowed,
+                                limit=256,
+                            )
+                            if hit.item_id in allowed_set
+                        )
+                    for data, _ in matches:
+                        if data["id"] in allowed_set:
+                            by_id.setdefault(data["id"], data)
+            for mid in set().union(*hints.values()) - by_id.keys():
+                if mid in allowed_set:
+                    data = self.storage.get(self.owner, "memory", mid)
+                    if data:
+                        by_id[mid] = data
+            ranked = []
+            for mid, data in by_id.items():
+                if mid not in allowed_set:
+                    continue
                 memory = Memory.model_validate(data)
                 if not self.authorized(memory) or memory.character_id != character_id:
                     continue
-                parts = score(
+                decision = rank(
                     memory,
-                    query,
+                    fused.get(mid, RetrievalSignals()),
                     clock,
-                    fts=fts,
-                    relationship=relationship,
-                    current_topic=current_topic,
-                    unfinished_topics=topics,
-                    active_goals=goals,
+                    relationship=float(bool(relationship) and memory.kind == "relationship"),
+                    **{key: float(mid in ids) for key, ids in hints.items()},
                 )
-                ranked.append((sum(parts.values()), memory))
+                ranked.append((decision.sort_key(), memory, decision))
             ranked.sort(key=lambda item: (item[0], item[1].created_at, item[1].id), reverse=True)
-            # Retrieval is read-only: it is neither injection nor useful independent evidence.
-            return [memory for _, memory in ranked[:limit]]
+            self.retrieval_diagnostics = [
+                decision.model_dump(mode="json") for _, _, decision in ranked[:limit]
+            ]
+            if generation is not None:
+                ranked = [
+                    item
+                    for item in ranked
+                    if self.use_decision(
+                        character_id, item[1], query=query, generation=generation, recall=request
+                    ).policy
+                    != "INTERNAL_ONLY"
+                ]
+            return [memory for _, memory, _ in ranked[:limit]]
 
     def use_decision(
         self,
@@ -351,7 +487,8 @@ class Memories:
         *,
         content: str | None = None,
         expires_at: datetime | None = None,
-        confirmed: bool = False,
+        authorization: StorageAuthorization | None = None,
+        operation_id: str = "default",
     ) -> Memory:
         """Correct memory content and invalidate dependent derivations, preserving opaque archives.
 
@@ -364,9 +501,18 @@ class Memories:
                 raise ValueError("Forgotten memories cannot be restored")
             if m.kind == "real_user" and content is not None:
                 raise ValueError("Store a new corrected character memory and explicitly promote it")
-            if content is not None:
-                check_content(content, confirmed=confirmed)
             changes: dict[str, Any] = {"content": content} if content is not None else {}
+            if content is not None:
+                safety = check_content(
+                    content,
+                    context=SafetyContext(operation_id=operation_id),
+                    authorization=authorization,
+                    classifier=self.safety_classifier,
+                )
+                # Approval permits storage, never reclassifies private text as public.
+                # 批准只允许存储，不能把敏感正文降级为公开内容。
+                if safety.assessment.sensitive:
+                    changes["sensitivity"] = "sensitive"
             if expires_at is not None:
                 changes["expires_at"] = expires_at
             updated = Memory.model_validate(m.model_dump() | changes)
@@ -465,7 +611,9 @@ class Memories:
         # Erase derived companion bodies as well, so forget/promotion cannot leak through context.
         from .companion import Companion
 
-        companion = Companion(self.storage, self.owner, self.characters)
+        companion = Companion(
+            self.storage, self.owner, self.characters, safety_classifier=self.safety_classifier
+        )
         if self.storage.get(self.owner, "companion", character_id) is not None:
             record = companion.get(character_id)
             if affected and erase_private:

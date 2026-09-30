@@ -5,6 +5,7 @@
 
 import json
 import sqlite3
+from contextlib import closing
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -20,37 +21,35 @@ from character_runtime.server import safe
 from character_runtime.storage import SQLiteStorage
 
 
-def main():
+def check_affect():
     with TemporaryDirectory() as directory:
         path = Path(directory) / "legacy.sqlite3"
-        store = SQLiteStorage(path)
-        instant = datetime(2026, 9, 23, tzinfo=UTC)
-        rt = Runtime(store, "owner", clock=lambda: instant)
-        cid = rt.characters.create(CharacterDefinition(name="affect")).id
-        rt.open_session("s", character_id=cid)
-        legacy = {
-            "label": "legacy-mood-sentinel",
-            "intensity": 0.987,
-            "reason": "archived only",
-            "evidence_ids": ["old-opaque-evidence"],
-            "updated_at": "2021-01-01T00:00:00+00:00",
-            "influenced_at": None,
-            "unknown_extension": {"nested": [1, "preserve", {"units": "unmapped"}]},
-        }
-        companion = rt.companion.get(cid).model_dump(mode="json")
-        companion.update(mood=legacy, unknown_outer={"keep": True})
-        store.put("owner", "companion", cid, companion)
-        store.close()
-        connection = sqlite3.connect(path)
-        connection.execute("PRAGMA user_version=4")
-        original = connection.execute(
-            "SELECT value FROM records WHERE collection='companion' AND key=?", (cid,)
-        ).fetchone()[0]
-        connection.commit()
-        original_rows = connection.execute(
-            "SELECT * FROM records ORDER BY owner, collection, key"
-        ).fetchall()
-        connection.close()
+        with closing(SQLiteStorage(path)) as store:
+            instant = datetime(2026, 9, 23, tzinfo=UTC)
+            rt = Runtime(store, "owner", clock=lambda: instant)
+            cid = rt.characters.create(CharacterDefinition(name="affect")).id
+            rt.open_session("s", character_id=cid)
+            legacy = {
+                "label": "legacy-mood-sentinel",
+                "intensity": 0.987,
+                "reason": "archived only",
+                "evidence_ids": ["old-opaque-evidence"],
+                "updated_at": "2021-01-01T00:00:00+00:00",
+                "influenced_at": None,
+                "unknown_extension": {"nested": [1, "preserve", {"units": "unmapped"}]},
+            }
+            companion = rt.companion.get(cid).model_dump(mode="json")
+            companion.update(mood=legacy, unknown_outer={"keep": True})
+            store.put("owner", "companion", cid, companion)
+        with closing(sqlite3.connect(path)) as connection:
+            connection.execute("PRAGMA user_version=4")
+            original = connection.execute(
+                "SELECT value FROM records WHERE collection='companion' AND key=?", (cid,)
+            ).fetchone()[0]
+            connection.commit()
+            original_rows = connection.execute(
+                "SELECT * FROM records ORDER BY owner, collection, key"
+            ).fetchall()
         archive = SQLiteStorage._archive_legacy_mood
 
         def interrupted(storage, version):
@@ -64,7 +63,7 @@ def main():
                 pass
             else:
                 raise AssertionError("Interrupted migration succeeded")
-        with sqlite3.connect(path) as connection:
+        with closing(sqlite3.connect(path)) as connection:
             assert connection.execute("PRAGMA user_version").fetchone()[0] == 4
             assert (
                 connection.execute(
@@ -76,7 +75,7 @@ def main():
         try:
             rt = Runtime(store, "owner", clock=lambda: instant)
             assert store.migration_backup, "Affect semantic migration requires private backup"
-            with sqlite3.connect(store.migration_backup) as backup:
+            with closing(sqlite3.connect(store.migration_backup)) as backup:
                 assert (
                     backup.execute(
                         "SELECT value FROM records WHERE collection='companion' AND key=?", (cid,)
@@ -179,6 +178,34 @@ def main():
         "PASS Affect authority: immutable legacy Mood, compatibility code, reducer, "
         "backup/rollback, V2/V3 roundtrip"
     )
+
+
+def main():
+    """Retain connection references so GC cannot hide Windows handle leaks on POSIX.
+
+    保留连接引用，让 POSIX 上的垃圾回收也不能掩盖 Windows 文件句柄泄漏。
+    """
+    opened = []
+    connect = sqlite3.connect
+
+    def tracked(*args, **kwargs):
+        connection = connect(*args, **kwargs)
+        opened.append(connection)
+        return connection
+
+    try:
+        with patch("sqlite3.connect", side_effect=tracked):
+            check_affect()
+        for connection in opened:
+            try:
+                connection.execute("SELECT 1")
+            except sqlite3.ProgrammingError:
+                continue
+            raise AssertionError("SQLite connection remains open after affect validation")
+    finally:
+        for connection in opened:
+            connection.close()
+    print("PASS SQLite lifecycle: every success/failure/backup connection closed before cleanup")
 
 
 if __name__ == "__main__":

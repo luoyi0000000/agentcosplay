@@ -1,0 +1,149 @@
+{
+  "$defs": {
+    "RetrievalSignals": {
+      "additionalProperties": false,
+      "description": "Relevance independent of utility and truth. / 相关度与效用、真实性分离。",
+      "properties": {
+        "lexical_rank": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Lexical Rank"
+        },
+        "semantic_rank": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Semantic Rank"
+        },
+        "fusion_score": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Fusion Score",
+          "type": "number"
+        }
+      },
+      "title": "RetrievalSignals",
+      "type": "object"
+    },
+    "TrustSignals": {
+      "additionalProperties": false,
+      "description": "Canonical provenance stays distinct from recall rank. / 规范来源与召回排名保持独立。",
+      "properties": {
+        "confidence": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Confidence",
+          "type": "number"
+        },
+        "provenance": {
+          "title": "Provenance",
+          "type": "string"
+        },
+        "archived": {
+          "title": "Archived",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "confidence",
+        "provenance",
+        "archived"
+      ],
+      "title": "TrustSignals",
+      "type": "object"
+    },
+    "UtilitySignals": {
+      "additionalProperties": false,
+      "description": "Character usefulness cannot grant access. / 角色效用不能授予访问权。",
+      "properties": {
+        "recency": {
+          "default": 0,
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Recency",
+          "type": "number"
+        },
+        "importance": {
+          "default": 0,
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Importance",
+          "type": "number"
+        },
+        "relationship": {
+          "default": 0,
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Relationship",
+          "type": "number"
+        },
+        "current_topic": {
+          "default": 0,
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Current Topic",
+          "type": "number"
+        },
+        "unfinished_topic": {
+          "default": 0,
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Unfinished Topic",
+          "type": "number"
+        },
+        "active_goal": {
+          "default": 0,
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Active Goal",
+          "type": "number"
+        }
+      },
+      "title": "UtilitySignals",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Ephemeral explainable ranking; never persisted as memory truth.\n可解释的临时排序，不持久化为记忆真实性。",
+  "properties": {
+    "memory_id": {
+      "maxLength": 200,
+      "minLength": 1,
+      "title": "Memory Id",
+      "type": "string"
+    },
+    "relevance": {
+      "$ref": "#/$defs/RetrievalSignals"
+    },
+    "utility": {
+      "$ref": "#/$defs/UtilitySignals"
+    },
+    "trust": {
+      "$ref": "#/$defs/TrustSignals"
+    }
+  },
+  "required": [
+    "memory_id",
+    "relevance",
+    "utility",
+    "trust"
+  ],
+  "title": "RetrievalDecision",
+  "type": "object",
+  "$schema": "https://json-schema.org/draft/2020-12/schema"
+}

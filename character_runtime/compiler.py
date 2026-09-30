@@ -7,10 +7,10 @@ from typing import Any
 
 from .context_models import CompiledContext, ContextBudget, canonical, fingerprint
 from .models import CharacterDefinition, VoiceProfile
-from .rules import BASE_RULES, MODE_RULES
+from .rules import BASE_RULES, canon_policy
 from .storage import Storage
 
-COMPILER_VERSION = "5"
+COMPILER_VERSION = "6"
 _DYNAMIC_FACTS = {
     "current_time",
     "timestamp",
@@ -98,7 +98,8 @@ def compile_definition(
             "growth_policy": validated.growth.model_dump(mode="json"),
             "voice": validated.voice.model_dump(mode="json"),
             "default_task_mode": validated.default_task_mode,
-            "rules": [*BASE_RULES, MODE_RULES[validated.mode]],
+            "rules": list(BASE_RULES),
+            "canon_policy": canon_policy(validated.mode),
             "growth_overlay": stable_overlay,
             "character_version": validated.revision,
             "growth_version": growth_version,

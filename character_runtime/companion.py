@@ -23,7 +23,7 @@ from .companion_models import (
 )
 from .models import Candidate, now
 from .providers import Observation, Provider
-from .safety import check_content
+from .safety import SensitivityClassifier, check_content
 from .storage import Storage
 
 
@@ -39,10 +39,13 @@ class Companion:
         owner: str,
         characters: Characters,
         clock: Callable[[], datetime] = now,
+        *,
+        safety_classifier: SensitivityClassifier | None = None,
     ) -> None:
         if owner != characters.owner:
             raise ValueError("Companion owner must match Characters owner")
         self.storage, self.owner, self.characters, self.clock = storage, owner, characters, clock
+        self.safety_classifier = safety_classifier
 
     def get(self, character_id: str) -> CompanionState:
         """Read companion state preserving opaque legacy fields and safe defaults.
@@ -205,7 +208,7 @@ class Companion:
         """
 
         observation = Observation.model_validate(observation.model_dump())
-        check_content(observation.model_dump_json())
+        check_content(observation.model_dump_json(), classifier=self.safety_classifier)
         with self.storage.transaction():
             state = self.get(character_id)
             if not observation.fresh(self.clock()):

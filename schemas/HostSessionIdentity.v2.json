@@ -1,0 +1,62 @@
+{
+  "additionalProperties": false,
+  "description": "A group conversation owns a character, while each turn resolves its own actor.\n\n群会话拥有角色，每轮独立解析 Actor；私聊受众由已验证 Endpoint 固定。",
+  "properties": {
+    "host": {
+      "maxLength": 200,
+      "minLength": 1,
+      "title": "Host",
+      "type": "string"
+    },
+    "platform": {
+      "maxLength": 200,
+      "minLength": 1,
+      "title": "Platform",
+      "type": "string"
+    },
+    "endpoint_id": {
+      "maxLength": 200,
+      "minLength": 1,
+      "title": "Endpoint Id",
+      "type": "string"
+    },
+    "native_session_id": {
+      "maxLength": 200,
+      "minLength": 1,
+      "title": "Native Session Id",
+      "type": "string"
+    },
+    "audience": {
+      "enum": [
+        "dm",
+        "group"
+      ],
+      "title": "Audience",
+      "type": "string"
+    },
+    "participant_id": {
+      "anyOf": [
+        {
+          "maxLength": 200,
+          "minLength": 1,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Participant Id"
+    }
+  },
+  "required": [
+    "host",
+    "platform",
+    "endpoint_id",
+    "native_session_id",
+    "audience"
+  ],
+  "title": "HostSessionIdentity",
+  "type": "object",
+  "$schema": "https://json-schema.org/draft/2020-12/schema"
+}

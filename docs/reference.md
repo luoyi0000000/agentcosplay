@@ -1,6 +1,6 @@
 # Runtime 数据契约
 
-规范来自 `character_runtime` 的 Pydantic 模型和 `schemas/`；额外字段、非有限数字及越界输入被拒绝。SQLite schema 为 3，角色包为 V3，接受旧 V1/V2 包。长期状态按 RuntimeOwner、CharacterInstance、Participant 或 Endpoint 分隔；Session 的角色路由与逐轮 Actor 分离。一个 session 同时只有一个活动人物。
+规范来自 `character_runtime` 的 Pydantic 模型和 `schemas/`；额外字段、非有限数字及越界输入被拒绝。SQLite schema 为 5，角色包为 V3，接受旧 V1/V2 包。长期状态按 RuntimeOwner、CharacterInstance、Participant 或 Endpoint 分隔；Session 的角色路由与逐轮 Actor 分离。一个 session 同时只有一个活动人物。
 
 ## 权威与证据
 
@@ -9,6 +9,28 @@ RawEvent 保存可见输入、最终可见输出或必要观察；不接收隐�
 Memory、Fact、State、Narrative 独立存储。提案只接受同 owner/character 的有效 RawEvent 证据；Narrative、旧 Memory 和导入证据不能充当新可信证据。媒体、引用、转发、计划与模拟不能直接建立 Fact。Fact 保留有效期，冲突槽需要 OOC、SUPERSEDE 和当前 allowlist；旧 Fact 留存 superseded 链。真实用户 Fact 还要求直接用户证据和保存确认。确定性核心要求 Fact value 是证据原文片段，不冒充自然语言蕴含判断器。
 
 安全门拒绝可识别密码、密钥、Token、Cookie 与私钥。敏感内容需要明确存储授权；凭据不能靠授权绕过。模式检测不是完整的敏感信息识别器，宿主仍须正确标记 sensitivity，不应传入凭据。授权由可信宿主根据用户意图传递，OOC 和确认文本并不是独立的身份认证。
+
+## Typed decisions / 类型化决策
+
+`ExpressionPolicy.resolve` decides OOC, neutral/payload-only suppression and prose ownership in code. `ExpressionExecution` carries the resolved policy and validated effective voice. Legacy rendering hints cannot contradict its enabled/ownership fields; generated prose inside a technical deliverable remains character-owned unless explicitly suppressed. `rules.py` holds typed decisions and a minimal protocol; rendered text does not authorize lifecycle or persistence operations. Compiler version 6 invalidates old derived prefixes without changing canonical character data.
+
+`ExpressionPolicy.resolve` 在代码中决定 OOC、中立/纯载荷抑制与表达归属。`ExpressionExecution` 携带解析后的策略与已验证声音；旧渲染提示不能与启用/归属字段矛盾。技术产物中的自拟自然语言默认仍归角色表达，除非显式抑制。`rules.py` 提供类型化决策及最小协议，渲染文本不授予生命周期或持久化权限。Compiler 版本 6 使旧派生前缀失效，不改变角色规范数据。
+
+Retrieval authorizes owner, character, audience, validity and session in SQL before ranking. Lexical FTS/token ranks and optional `SemanticIndex` ranks use reciprocal rank fusion (RRF), without mixing raw scores. `RetrievalDecision` separates relevance, character utility (topic/goal/relationship/recency/importance), and confidence/provenance. `context_explain` exposes diagnostics without granting access. Explicit temporal/kind recall bounds also constrain topic/goal candidates. Similarity alone never merges negations or changed numbers.
+
+检索先在 SQL 中检查 Owner、角色、受众、有效性与会话，再排序。FTS/词项及可选 `SemanticIndex` 的名次通过 RRF 融合，不直接混合原始分数。`RetrievalDecision` 分开记录相关性、角色效用（话题/目标/关系/近期性/重要度）与置信度/来源。`context_explain` 提供诊断但不授予权限；显式时间/类型范围同样约束话题/目标候选。语义相似本身不能合并否定或数字变化。
+
+A trusted embedding host may inject `semantic_index` into `Runtime` or `build_server`; no vendor, vector service or second LLM is bundled or enabled by default. The provider must filter `namespace` and `allowed_ids` **before** ranking, avoid retaining query logs, and support erasure. SQL rechecks returned IDs. `memory.rebuild_semantic(character_id)` refreshes committed authorized data outside an existing transaction and holds the database lock during provider calls; use bounded local providers. Refresh explicitly after committed writes/imports: this version has no background index worker. A stale or absent index does not change canonical memory; lexical retrieval remains available.
+
+可信嵌入宿主可向 `Runtime` 或 `build_server` 注入 `semantic_index`；默认不安装或启用任何向量服务、供应商或第二模型。后端必须在排序**之前**应用 `namespace` 与 `allowed_ids`、避免保留查询日志，并支持遗忘；返回 ID 仍由 SQL 复核。`memory.rebuild_semantic(character_id)` 在已有事务之外刷新已提交的授权数据，后端调用期间持有数据库锁，适合有界本地后端。写入/导入提交后须显式刷新，本版没有后台索引任务。索引缺失或过旧不改变规范记忆，词项检索仍可用。
+
+`SafetyContext` (trusted purpose/provenance), optional `SensitivityClassifier`, and structural evidence produce `SensitivityAssessment` and `SafetyDecision`. Format/checksum evidence is not a claim that a value is genuine. Unknown-format private data can be assessed through context or the trusted classifier; without either, detection remains conservative and incomplete. Configure `safety_classifier` on `Runtime`/`build_server`; it applies to ingestion, corrections, proposals, generated observations, delivery and package validation. Classifier failures deny persistence with a redacted error. No model is called by the default implementation.
+
+`SafetyContext`（可信用途/来源）、可选 `SensitivityClassifier` 与结构证据共同生成 `SensitivityAssessment` 和 `SafetyDecision`。格式/校验和证据不声称数值真实。未知格式的私人信息可由上下文或可信分类器识别；两者都缺失时，检测仍是保守且不完整的。通过 `Runtime`/`build_server` 配置 `safety_classifier`，覆盖摄入、更正、提案、生成观察、投递和角色包验证。分类器失败时使用脱敏错误拒绝持久化；默认实现不调用模型。
+
+`StorageAuthorization` binds explicit approval to an operation and exact content hash; span approval cannot authorize surrounding text. Internal `check_content(..., confirmed=True)` callers must migrate to `authorization=StorageAuthorization.for_content(...)` **after** verifying user authority. Existing MCP confirmation fields remain inputs to the authenticated operation boundary, not reusable grants. Approval never overrides high authentication risk. Corrections preserve or raise sensitivity; an endpoint-public memory cannot be changed into sensitive private text. Failed writes roll back without consuming their target grant.
+
+`StorageAuthorization` 将显式批准绑定到操作和精确正文摘要；局部片段批准不能授权周围正文。内部旧 `check_content(..., confirmed=True)` 调用须在验证用户权限**之后**改用 `authorization=StorageAuthorization.for_content(...)`。现有 MCP 确认字段继续在认证操作边界使用，不是可复用授权。批准不能覆盖高凭据风险。更正保留或提高敏感标签；Endpoint 公开记忆不能被更正为敏感私文。失败写入回滚，不消耗目标授权。
 
 ## 写入与恢复
 
@@ -23,6 +45,14 @@ importance、confidence、durability、activation 分开。普通低价值提案
 时间召回由宿主发送 RecallRequest 的 intent、起止时间或 today/yesterday/last_week 与时区，按原事件时间过滤。关键词不承担主要意图识别。EXACT_QUOTE / EXACT_RECALL 直接读取可见 RawEvent 原文（包含尚未提炼为 Memory 的记录）；推断、旧记忆和模拟必须保留标签。项目知识独立于人物 Memory，不进入人格编译。
 
 ContextAssembler 是唯一投影与预算权威。稳定前缀由人物 revision、growth version、compiler version 决定，不含当前时间、天气、关系、召回结果或用户名。同版本内容字节稳定；编译失败保留同角色 Last Known Good。临时状态按 slot 预算收纳完整片段，超限省略并报告，不机械截断用户答复。context_explain 只返回统计、版本与摘要。
+
+The platform-neutral `UniversalGenerationContext` separates identity, required expression execution, authorized fragments, and the current GenerationRequest. `ExpressionExecution` is derived per turn; it has no storage collection or write API. Its effective voice includes approved growth and authorized participant adaptation. The deterministic directive owns all model-authored natural language and discourse organization while respecting local exactness exceptions. Required execution is reserved before optional fragments; budget failure is explicit. Legacy `stable_prefix`/`temporary` are compatibility views and must not be injected beside `model_context`.
+
+UniversalGenerationContext 分离身份、必需执行契约、授权片段与本轮任务。ExpressionExecution 仅为单轮派生，不新增存储域或写接口；有效声音包含已批准成长及经过作用域检查的私人适应。结构与短指令由同一契约产生，涵盖自然语言正文和组织方式，精确性只局部优先。必需执行先占预算，超限明确失败；旧字段不能和 model_context 重复注入。
+
+Endpoint lifecycle is Owner-only: deactivate compares the expected revision, writes an idempotent receipt with the previous record, marks inactive and preserves audit/delivery history. New ingress and old turn capabilities fail closed. OOC belongs to the Runtime conversation across Host turns; external Host session strings and Runtime turn IDs are different identifiers.
+
+Endpoint 停用仅限 Owner，检查预期 revision、保存幂等回执与原记录、标记 inactive；历史及投递状态不删除。新入口和旧回合均拒绝。OOC 在同一 Runtime 会话跨轮保持；外部 Host session 字符串和 Runtime turn_id 不可互换。
 
 ## 关系、成长与表达
 

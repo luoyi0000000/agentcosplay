@@ -2,6 +2,52 @@
 
 安装步骤集中在 [INSTALL](../INSTALL.md)。全部入口使用同一 Runtime、owner、character ID，session ID 按渠道和会话隔离。模型由宿主提供，后端不调用 LLM。
 
+## Shared Host protocol / 共享宿主协议
+
+`host_protocol.py` owns `HostIngress`, typed input evidence, `HostCapabilities`, the bounded/expiring `TurnRegistry`, stable Host keys, `ProjectionMapper` and `UniversalHostBridge`. Hermes/AstrBot retain only native event extraction, SDK hook registration and per-request wrapping. Both use the same prepare → tool → observe → finalize path, typed `UniversalGenerationContext`, and capability-scoped tools. SDK representation differs; character policy does not.
+
+`host_protocol.py` 统一承载 `HostIngress`、类型化输入证据、`HostCapabilities`、有界过期 `TurnRegistry`、稳定 Host Key、`ProjectionMapper` 与 `UniversalHostBridge`。Hermes/AstrBot 只保留原生事件提取、SDK 钩子注册及请求级包装，复用相同 prepare → tool → observe → finalize、`UniversalGenerationContext` 和单轮工具权限；只改变 SDK 表示，不分叉角色策略。
+
+The registry keeps at most 128 turns for 300 seconds, returns defensive copies and rejects superseded prepare completions. A prepare for the same key invalidates the old capability before awaiting Runtime. Session cleanup clears pending and active turns. Existing key bytes and legacy `TurnEnvelope` serialization are preserved; `HostCapabilities` remains importable from `lifecycle` for compatibility. Projection replacement is request-local and preserves other plugins' content. Missing/expired capabilities fail closed. The Runtime CLI remains process/transport startup; the Hermes CLI binding supplies its official native conversation ID.
+
+注册表最多保留 128 个回合、有效期 300 秒，返回防修改副本并拒绝被新请求取代的旧 prepare 回调。同一键的新 prepare 在等待 Runtime 前使旧权限失效；清理会话同时清除待完成和活动回合。既有 Key 字节与旧 `TurnEnvelope` 序列化保持不变，`HostCapabilities` 仍可从 `lifecycle` 兼容导入。投影替换仅作用于当前请求，并保留其他插件内容；缺失/过期权限拒绝调用。Runtime CLI 仍只承担进程/传输入口；Hermes CLI 绑定另行提供官方原生会话 ID。
+
+## Persistent sessions / 持久会话
+
+`HostIngress.native_session_id` is a trusted Harness conversation identifier, not a Runtime session or a per-message ID. The old `session_id` ingress alias and `TurnEnvelope` wire field remain compatible. `ScopeResolver` verifies identity/endpoint first, then `SessionRegistry` maps Host + canonical endpoint + native conversation to a persistent canonical session. Full platform/audience provenance is checked on every lookup. A group shares its conversation/character across actors; each turn separately authorizes its actor, without private-memory access in group context. A DM mapping also records its verified participant.
+
+`HostIngress.native_session_id` 来自可信宿主会话，不是 Runtime session 或消息 ID。旧入口别名和传输字段保持兼容。先验证身份及端点，再映射持久规范会话，并核对完整平台/受众来源。群聊共用会话与角色，每轮独立授权 Actor，群上下文不读取私人记忆；私聊额外记录已验证 Participant。
+
+`host_prepare_turn` / `host_turn_open` return **session_id** and **turn_id** separately. The first continues across messages/restarts; the second authorizes only the current interaction. `ScopedToolRouter` removes session fields from request-local model schemas and injects the registered session into top-level or nested tool arguments. A conflicting ID is rejected; `open`, `set_default`, and `bind_project` require trusted administration. The legacy turn-ID alias remains accepted under the same capability, never as an independent credential. Switching character revokes that turn's old scope; the next trusted prepare resolves the new route.
+
+两个入口分别返回持久 session ID 和单轮 turn ID。Bridge 在模型工具 Schema 副本中隐藏会话字段，执行时自动补齐顶层或 request 内参数；冲突 ID 明确拒绝。模型不能注册会话、设置默认或项目路由。旧 turn-ID 别名仍可使用，但必须携带当前权限。切换角色会使旧单轮作用域失效，下次可信 prepare 解析新角色。
+
+Mappings live in the same SQLite (`host_session`, `conversation_session`, idempotent `host_session_operation` receipts). Legacy rows are enriched transactionally without changing their IDs, routes, mode or unknown fields. No physical schema rewrite or trust elevation occurs. The trusted `host_session_control` API can invalidate or rotate a canonical session; rotation archives the old row and resets session-only mode/route to the endpoint default. Private memory and bindings remain intact. Invalidated mappings never silently resurrect. `UniversalHostBridge.session_boundary` uses an active native callback handle, cancels pending callbacks in that bucket, and calls this same API. These collections are not portable Character Package contents.
+
+映射和幂等操作收据使用同一 SQLite。旧记录在事务内补充来源，不修改原 ID、路由、模式或未知字段，不重写物理 Schema，也不提升信任。可信生命周期 API 可注销或轮换会话；轮换保留旧记录，临时模式/角色恢复端点默认，私人记忆与绑定不变。注销映射不能隐式复活。Bridge 通过活动原生回调句柄执行边界操作并清除该桶内待完成回调；这些 Host 数据不进入角色导出包。
+
+### Native conversation sources / 原生会话来源
+
+- **Hermes Gateway:** official hook `session_id`; Gateway endpoint and actor remain distinct. The same path handles QQ, Telegram and other supported Hermes transports.
+- **Hermes CLI:** official hook `platform=cli`, stable `session_id` and per-run `turn_id`; configure plugin `cli_binding` with `actor_id`, `runtime_platform`, `endpoint_id` that already have trusted Runtime bindings. There is no nickname/Owner fallback. A missing native ID is rejected. A future Harness without IDs must create its native conversation handle once at conversation start, outside the model.
+- **AstrBot:** `ProviderRequest.conversation.cid`, falling back only to explicitly supplied `ProviderRequest.session_id`; the route's endpoint ID alone cannot stand in for the conversation. Missing conversation identity rejects prepare. A reset to a new CID creates a fresh Runtime session.
+
+Hermes Gateway 使用官方会话 ID，QQ/TG 不各写一套策略。CLI 使用官方稳定 session_id 和单轮 turn_id，插件 cli_binding 必须显式配置已绑定的 Actor、平台与端点，不猜测 Owner。AstrBot 优先使用 conversation.cid，仅允许明确 session_id 作为回退，不能以 Endpoint 冒充会话。缺少原生 ID 拒绝 prepare。未来无会话 ID 的宿主须在对话开始时生成一次原生句柄，不能由模型逐轮拼造。
+
+Hermes `on_session_end` ends a run, not necessarily a conversation; shutdown/finalize may be resumable. These hooks clear transient capabilities only. Reset with a new native ID creates a new mapping; explicit `old_session_id` also clears old callbacks. Durable invalidation/rotation requires an explicit trusted conversation boundary. CLI pre-LLM text without matching raw capture is marked transformed: context/control work, but this hook alone does not attest exact user evidence. Both native bindings still report no reliable delivery ACK; generation is not delivery.
+
+Hermes 的 on_session_end 是一轮运行结束，shutdown/finalize 也可能恢复，因此只清理临时权限；新原生 ID 产生新映射，reset 明确提供旧 ID 时同时清除旧回调。持久注销/轮换必须有明确可信会话边界。CLI pre-LLM 正文没有对应原始捕获时标记为 transformed，能加载上下文/控制会话，但不能据此认证用户原话。两个绑定仍无可靠投递 ACK，生成不冒充送达。
+
+Sources checked for this contract: [Hermes lifecycle hooks](https://github.com/NousResearch/hermes-agent/blob/main/website/docs/user-guide/features/hooks.md), [Hermes middleware](https://github.com/NousResearch/hermes-agent/blob/main/hermes_cli/middleware.py), [AstrBot request fields](https://github.com/AstrBotDevs/AstrBot/blob/master/astrbot/core/provider/entities.py), [AstrBot tool schemas](https://github.com/AstrBotDevs/AstrBot/blob/master/astrbot/core/agent/tool.py). These are source-contract checks, not a claim that a locally installed Host or real QQ/TG transport was exercised.
+
+上述为本轮核对的官方源码契约，不代表已运行真实宿主或 QQ/TG 平台验收。
+
+### Future bindings / 后续绑定
+
+MaiBot is a binding contract, not an installed SDK integration. A binding supplies authoritative `HostIngress`, reports actual `HostCapabilities`, invokes shared prepare/tool/observe/finalize, maps `UniversalGenerationContext` into a temporary native request, and reports only real send acknowledgements. It must propagate the same canonical session and per-turn capability, route tools through `ScopedToolRouter`, and call the trusted session boundary only when its native lifecycle confirms an end/reset. It owns no session policy, state DB, character logic or second model.
+
+MaiBot 当前仅定义绑定契约，没有宣称 SDK 已实现。绑定提供可信入口、真实能力和生命周期事件，映射临时生成请求，使用统一作用域工具路由；只有原生生命周期确认结束/重置才应用持久会话边界。禁止独立会话策略、角色数据库、角色规则或第二模型。
+
 ## 工具
 
 MCP 发现提供真实输入 Schema。工具返回 ok/result，业务失败 ok=false；还须检查协议 is_error。
@@ -9,7 +55,8 @@ MCP 发现提供真实输入 Schema。工具返回 ok/result，业务失败 ok=f
 | 工具 | 用途 |
 |---|---|
 | character_read / character_write | 角色摘要、定义、OOC 修改；没有 delete 操作 |
-| session_control | 选角、OOC、临时模式、默认/项目路由 |
+| session_control | 选角、OOC、临时模式、默认/项目路由；受限模式由 Bridge 自动注入规范 session ID，并携带 turn capability |
+| endpoint_bind / endpoint_control | Owner 绑定外部端点；按 revision 软停用并保留审计 |
 | runtime_context | 有界、按查询选择的角色/记忆/Companion/Self Model |
 | turn_commit | RawEvent 证据提案、operation_id、事务与目标 allowlist |
 | memory_recall / memory_write / memory_promote | 角色隔离、遗忘及真实用户确认 |
@@ -30,11 +77,15 @@ Native bridge authentication separates discovery, turn execution and owner admin
 
 原生桥接将工具发现、单轮执行与 Owner 管理凭据分开。本地发现凭据只能读取工具 Schema，不能执行 Runtime 操作；模型调用必须提供已验证的单轮令牌，失败不能回退到管理凭据。桥接复用现有 MCP SDK，不携带凭据跟随重定向或环境代理，错误脱敏，也不持有状态数据库。Hermes 原生接入须通过 `connect --native-hermes` 使用发现凭据；既有单用户 MCP 入口继续保留。
 
-Hermes integration research is pinned to official source `439eb0395eed5025139ee917526f31e2d161699e` (declared version 0.21.4), not an installed-host validation. Its `pre_llm_call` supports ephemeral context; `post_llm_call` observes generation, not delivery. The generic plugin hook registry has no final-send receipt. The internal post-delivery callback is invoked from cleanup and does not attest success or final content. The chosen integration uses official hooks only, without version-bound Gateway extensions or synthetic delivery ACKs.
+Hermes uses official lifecycle hooks plus `llm_request` middleware. `pre_llm_call` prepares the Runtime turn but returns no injected text; the full `model_context` is mapped into each copied provider request. This avoids official hook spill, which reduces context beyond 10,000 characters to a preview. Chat Completions system messages, Responses instructions and Anthropic system blocks serialize the same contract after Host policy and before user/tool data. Unsupported native formats are not certified. This source/API check is not installed-Host behavioral acceptance.
 
-Hermes 接口核对依据官方源码 0.21.4，不代表已在真实宿主验证。pre_llm_call 可注入临时上下文，post_llm_call 只观察生成；通用插件钩子没有最终发送回执。用户已选择仅用官方钩子，不增加版本限定 Gateway 扩展，也不伪造成功 ACK。
+Hermes 使用官方生命周期钩子和 llm_request 中间件。pre_llm_call 只准备回合，不返回会被预览截断的长文字；每次模型请求复制后映射完整 model_context。三种原生参数格式共用同一语义，平台规则在前，角色契约先于用户/工具数据。未识别请求格式不在已验证支持范围；源码核对不等于真实宿主验收。
 
-The native entry (`plugin.yaml`, `__init__.py`) registers one canonical Skill, passive pre-dispatch capture, turn-local pre-LLM context, post-LLM generation observation, session cleanup and existing-MCP tool middleware. Official hooks call the shared prepare/observe/finalize lifecycle automatically. It has no database, model or duplicate tool registry. Explicit actor/endpoint routes resolve through Runtime bindings; unknown actors, subagents and mismatched audience types fail closed. Only matching raw text is ingested after authorized Host dispatch; transformed text loads context without fabricating evidence. Missing source time remains unknown with a separate observation clock. The optional sender hook field is checked when present; task-local actor identity remains mandatory.
+Request mapping was checked against Hermes source commit `26472756f1d8f65e714d6228f76b6816df87ea13`: [request metadata](https://github.com/NousResearch/hermes-agent/blob/26472756f1d8f65e714d6228f76b6816df87ea13/agent/turn_api_request.py), [hook spill](https://github.com/NousResearch/hermes-agent/blob/26472756f1d8f65e714d6228f76b6816df87ea13/tools/hook_output_spill.py). Mapping failure returns an empty replacement request: official middleware otherwise catches exceptions and reuses the original request, which could retain private context. The empty replacement makes generation fail without transmitting that stale payload. This source check does not certify an installed Hermes version or live model.
+
+请求映射按上述固定提交核对。映射失败时返回空替代请求：官方中间件会捕获抛出的异常并继续使用原请求，可能带出旧私人上下文；空替代使生成失败，避免传出该旧载荷。本项源码核对不代表已验证本机 Hermes 版本或真实模型行为。
+
+The native entry (`plugin.yaml`, `__init__.py`) registers one canonical Skill, passive pre-dispatch capture, turn preparation, request-local generation projection, post-LLM generation observation, session cleanup and existing-MCP tool middleware. Official hooks call the shared prepare/observe/finalize lifecycle automatically. It has no database, model or duplicate tool registry. Explicit actor/endpoint routes resolve through Runtime bindings; unknown actors, subagents and mismatched audience types fail closed. Only matching raw text is ingested after authorized Host dispatch; transformed text loads context without fabricating evidence. Missing source time remains unknown with a separate observation clock. The optional sender hook field is checked when present; task-local actor identity remains mandatory.
 
 原生入口注册唯一 Skill、调度前被动捕获、单轮上下文、生成观察、会话清理与现有 MCP 工具中间件。官方钩子自动调用共享 prepare/observe/finalize 生命周期。身份依赖 Runtime 显式绑定；未知身份、子 Agent、受众类型不匹配时拒绝访问。调度前捕获不写库，仅在宿主正式进入模型阶段且原文匹配时提交用户事件；转录或改写正文不冒充原话。源时间缺失时保持未知并单独记录观察时间。可选 sender 字段存在时必须一致，逐轮 Actor 元数据始终必需。生成回调不读取隐藏推理或整段宿主历史，结束生成仍保持投递未知。会话重置不删除长期状态。
 
@@ -42,13 +93,13 @@ The native entry (`plugin.yaml`, `__init__.py`) registers one canonical Skill, p
 
 **此 Adapter 不支持最终投递确认。** 不自动接管 Hermes 分段、输入状态、合并生成、主动发送或发送回执；Runtime 的完整发送协议继续保留，但 Hermes 自身自动回复尚未接入该状态机。同一 Endpoint 不可同时启用两个宿主自动回复。停用插件后发现凭据无法执行工具；Owner 可显式重新连接原有单用户 MCP 模式。真实双 Host 验收仍待完成。
 
-AstrBot native entry uses official `on_llm_request` and `on_llm_response`, explicit platform-instance/endpoint routes and the same Runtime lifecycle. Stable prefix precedes dynamic context in the request system message; AstrBot excludes that initial system message from saved history. It wraps existing MCP tools per request with a turn capability, without modifying global tool instances. `completion_text` is observed; hidden reasoning is ignored. SDK 1.x and 2.x share the same thin transport, with no dependency-major replacement, proxy inheritance or redirects.
+AstrBot native entry uses official `on_llm_request` and `on_llm_response`, explicit platform-instance/endpoint routes and the same Runtime lifecycle. The same universal execution/identity/context/request serialization enters the request system message; AstrBot excludes that initial system message from saved history. It wraps existing MCP tools per request with a turn capability, without modifying global tool instances. `completion_text` is observed; hidden reasoning is ignored. SDK 1.x and 2.x share the same thin transport, with no dependency-major replacement, proxy inheritance or redirects.
 
-AstrBot 原生入口使用官方请求/响应钩子、显式平台实例/Endpoint 路由及同一 Runtime 生命周期。请求系统消息中先放稳定前缀再放动态上下文；AstrBot 不将该首条系统消息写入历史。已有 MCP 工具按请求包装单轮令牌，不修改全局工具实例。只观察 `completion_text`，忽略隐藏推理。轻量传输兼容宿主 SDK 1.x 和 2.x，不替换依赖主版本、不继承代理、不跟随重定向。
+AstrBot 原生入口使用官方请求/响应钩子、显式平台实例/Endpoint 路由及同一 Runtime 生命周期。请求系统消息消费相同的统一执行/身份/上下文/请求序列；AstrBot 不将该首条系统消息写入历史。已有 MCP 工具按请求包装单轮令牌，不修改全局工具实例。只观察 `completion_text`，忽略隐藏推理。轻量传输兼容宿主 SDK 1.x 和 2.x，不替换依赖主版本、不继承代理、不跟随重定向。
 
-Reused AstrBot requests remove their own previous projection and unwrap old turn tools before routing, even when the next event is unrouted or rejected. Other plugins' appended text is preserved. If a Host has edited the injected block so it cannot be removed exactly, the request fails closed and must be rebuilt. No conversation history is deleted. Hermes continues using the official ephemeral user-message hook; neither bridge creates a second expression policy.
+Reused AstrBot requests remove their own previous projection and unwrap old turn tools before routing, even when the next event is unrouted or rejected. Other plugins' appended text is preserved. If a Host has edited the injected block so it cannot be removed exactly, the request fails closed and must be rebuilt. No conversation history is deleted. Hermes uses official request middleware and replaces complete owned projection blocks on request reuse; neither bridge creates a second expression policy.
 
-AstrBot 请求对象复用时，在路由前移除自身旧投影及旧工具包装，下一事件无路由或被拒绝也一样。其他插件追加的文字会保留。宿主若改写注入块导致无法精确移除，则拒绝该请求，须重新创建请求对象；不删除会话历史。Hermes 继续使用官方单轮用户消息注入，两个 Bridge 都不创建第二套表达策略。
+AstrBot 请求对象复用时，在路由前移除自身旧投影及旧工具包装，下一事件无路由或被拒绝也一样。其他插件追加的文字会保留。宿主若改写注入块导致无法精确移除，则拒绝该请求，须重新创建请求对象；不删除会话历史。Hermes 使用官方请求中间件，复用请求时替换自身完整投影块；两个 Bridge 都不创建第二套表达策略。
 
 Native hooks supply raw task text, not parsed semantic format constraints. Both bridges therefore start with fresh default generation metadata; the current user's explicit instructions still govern output. Clients that declare GenerationRequest obtain runtime format/payload validation. Native text-only requests are not falsely reported as parsed JSON/code contracts. Synthetic checks verify lifecycle and projection integrity; live Host/model tests must separately verify actual voice and history-bias recovery. Official hook contracts rechecked on 2026-09-27: [Hermes turn hooks](https://github.com/NousResearch/hermes-agent/blob/main/website/docs/user-guide/features/hooks.md), [AstrBot AI integration](https://docs.astrbot.app/dev/star/guides/ai.html).
 
@@ -106,4 +157,4 @@ Afterthoughts share Companion quiet hours, availability, cooldown and daily budg
 
 ## 2.x 调用迁移
 
-旧写入保留工具名但拒绝无证据请求。先 event_ingest，再 turn_commit(proposal)。编辑前在 OOC 读取相应对象获得 allowlist。读取工具实时 Schema，不复用旧 candidates/turn_id 参数。平台转发必须提供稳定身份绑定；未知身份只可有限无状态回应。上下文消费 stable_prefix + temporary，替换旧人物投影，不能累积多个角色前缀。增长、媒体、诊断及完整投递流程见 docs/reference.md、docs/companion.md。
+旧写入保留工具名但拒绝无证据请求。先 event_ingest，再 turn_commit(proposal)。编辑前在 OOC 读取相应对象获得 allowlist。读取工具实时 Schema，不复用旧 candidates/turn_id 参数。平台转发必须提供稳定身份绑定；未知身份只可有限无状态回应。模型消费完整 model_context（generation_context 的确定性序列化），替换旧人物投影，不能累积多个角色前缀；stable_prefix + temporary 仅作兼容读取，不代替必需执行契约。增长、媒体、诊断及完整投递流程见 docs/reference.md、docs/companion.md。

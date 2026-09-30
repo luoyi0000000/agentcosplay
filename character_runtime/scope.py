@@ -12,12 +12,24 @@ from typing import Any, Literal
 
 from pydantic import AwareDatetime, ConfigDict
 
+from .host_session import HostSessionIdentity, SessionRegistry
 from .identity import resolve
 from .models import Identifier, Model, new_id, now
 from .operations import fingerprint
 from .storage import Storage
 
 Scope = Literal["CHARACTER_INSTANCE", "PARTICIPANT_CHARACTER", "ENDPOINT_CHARACTER", "SESSION_TURN"]
+
+
+class EndpointError(ValueError):
+    """Safe endpoint error codes contain no private binding details.
+
+    稳定端点错误码不泄漏私人绑定信息。
+    """
+
+    def __init__(self, code: str, message: str) -> None:
+        super().__init__(message)
+        self.code = code
 
 
 class TurnActorContext(Model):
@@ -59,6 +71,15 @@ class ScopeResolver:
 
     def _record(self, collection: str, key: str) -> dict[str, Any]:
         value = self.storage.get(self.owner, collection, key)
+        if collection == "platform_binding":
+            if not value or value.get("owner_id") != self.owner:
+                raise EndpointError(
+                    "endpoint_binding_not_found",
+                    "Use the Runtime binding ID returned by endpoint_bind, "
+                    "not the external Host endpoint string",
+                )
+            if not value.get("active", True):
+                raise EndpointError("endpoint_inactive", "Endpoint has been deactivated")
         if not value or value.get("owner_id") != self.owner or not value.get("active", True):
             raise ValueError("Binding is absent, inactive or outside the owner namespace")
         return value
@@ -140,6 +161,47 @@ class ScopeResolver:
                 expected_revision,
             )
 
+    def deactivate_endpoint(
+        self, endpoint_id: str, *, expected_revision: int, operation_id: str, confirmation: str
+    ) -> dict[str, Any]:
+        """Revoke ingress and cached turns atomically, retaining records and replay receipts.
+
+        原子撤销入口及缓存回合；保留原记录、未知字段和重放回执，不删除历史或投递状态。
+        """
+        self._ids(endpoint_id, operation_id)
+        if not confirmation.strip():
+            raise ValueError("Explicit verified owner approval is required")
+        digest = fingerprint(["endpoint_deactivate", endpoint_id, expected_revision])
+        if type(expected_revision) is not int or expected_revision < 1:
+            raise ValueError("Expected endpoint revision must be a positive integer")
+        with self.storage.transaction():
+            receipt = self.storage.get(self.owner, "binding_receipt", operation_id)
+            if receipt:
+                if receipt["fingerprint"] != digest:
+                    raise ValueError("Binding operation ID conflict")
+                return dict(receipt["result"])
+            old = self._record("platform_binding", endpoint_id)
+            if old["revision"] != expected_revision:
+                raise ValueError("Binding revision changed; reload before updating")
+            result = {
+                **old,
+                "active": False,
+                "revision": old["revision"] + 1,
+                "deactivated_at": self.clock().isoformat(),
+            }
+            self.storage.put(self.owner, "platform_binding", endpoint_id, result)
+            self.storage.put(
+                self.owner,
+                "binding_receipt",
+                operation_id,
+                {
+                    "fingerprint": digest,
+                    "result": result,
+                    "previous": old,
+                },
+            )
+            return result
+
     def begin_turn(
         self,
         *,
@@ -159,15 +221,24 @@ class ScopeResolver:
             # Retry identifies one ingress, never a fresh actor or renewed authorization.
             # 重试指向同一入口，不得借重试更换说话人或延长过期权限。
             receipt_key = None
+            recovered = None
             digest = fingerprint([platform, actor_id, endpoint_id, session_id])
             if request_id is not None:
                 self._ids(request_id)
-                receipt_key = fingerprint([host, request_id])
+                receipt_key = fingerprint([host, platform, endpoint_id, session_id, request_id])
                 receipt = self.storage.get(self.owner, "turn_receipt", receipt_key)
+                if receipt is None:
+                    # Adopt only an exact legacy route; unrelated native request IDs may collide.
+                    # 只继承路由完全一致的旧收据；不同原生会话的请求 ID 可能相同。
+                    legacy = self.storage.get(
+                        self.owner, "turn_receipt", fingerprint([host, request_id])
+                    )
+                    if legacy and legacy.get("fingerprint") == digest:
+                        receipt = legacy
                 if receipt:
                     if receipt["fingerprint"] != digest:
                         raise ValueError("Ingress ID reused with different routing")
-                    return self.load_turn(receipt["turn_id"])
+                    recovered = self.load_turn(receipt["turn_id"])
             identity_id = resolve(self.storage, self.owner, host, platform, actor_id)
             if identity_id is None:
                 raise ValueError("Unknown actor; explicit verified identity binding required")
@@ -184,17 +255,24 @@ class ScopeResolver:
                 endpoint["kind"] == "dm" and endpoint["participant_id"] != participant
             ):
                 raise ValueError("Actor is not authorized for this endpoint")
-            key = fingerprint([host, endpoint_id, session_id])
-            session = self.storage.get(self.owner, "conversation_session", key)
-            if session is None:
-                session = {
-                    "id": key,
-                    "owner_id": self.owner,
-                    "platform_binding": endpoint_id,
-                    "character_id": endpoint["default_character_id"],
-                    "revision": 1,
-                }
-                self.storage.put(self.owner, "conversation_session", key, session)
+            session = SessionRegistry(self.storage, self.owner).resolve(
+                HostSessionIdentity(
+                    host=host,
+                    platform=platform,
+                    endpoint_id=endpoint_id,
+                    native_session_id=session_id,
+                    audience=endpoint["kind"],
+                    participant_id=participant if endpoint["kind"] == "dm" else None,
+                ),
+                endpoint["default_character_id"],
+            )
+            key = session["id"]
+            if recovered is not None:
+                # Registration also runs on legacy retries, but never renews turn authority.
+                # 旧收据重试也须完成注册，但绝不续期或替换原单轮权限。
+                if recovered.session_id != key or recovered.identity_binding != identity_id:
+                    raise ValueError("Recovered turn does not match the registered session")
+                return recovered
             self._authorize_route(endpoint, participant, session["character_id"])
             activity = self.storage.get(self.owner, "endpoint_activity", endpoint_id) or {
                 "revision": 0

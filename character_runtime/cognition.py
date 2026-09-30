@@ -9,8 +9,27 @@ from datetime import datetime, time, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
 
+from .context_models import ExpressionExecution
 from .models import CatchphraseRule, VoiceProfile
 from .persistence_models import GenerationRequest, RecallRequest
+from .rules import ExpressionPolicy
+
+
+def compile_expression(voice: VoiceProfile, policy: dict[str, Any]) -> ExpressionExecution:
+    """Compile resolved canonical voice and authorized turn policy without new state.
+
+    编译已解析声音和授权单轮策略；不持久化，也不从助手历史学习人格。
+    """
+    return ExpressionExecution(
+        enabled=policy["character_expression"]["enabled"],
+        effective_voice=VoiceProfile.model_validate(voice.model_dump()),
+        policy=policy,
+        resolved=ExpressionPolicy.model_validate(policy["resolved"])
+        if "resolved" in policy
+        else ExpressionPolicy.resolve(
+            GenerationRequest(), "soft_roleplay", active=policy["character_expression"]["enabled"]
+        ),
+    )
 
 
 def expression(
@@ -20,9 +39,11 @@ def expression(
 
     内容约束与角色表达并行；专业任务改变完成标准，不改变“谁在说话”。
     """
-    suppressed = request.payload_only or request.neutral_expression or mode == "task_neutral"
+    resolved = ExpressionPolicy.resolve(request, mode)
+    suppressed = not resolved.enabled
     analytical = request.intent in {"ANALYSIS", "EXPLANATION", "CODING", "FACTUAL_QA", "TOOL_TASK"}
     return {
+        "resolved": resolved.model_dump(mode="json"),
         "intent": request.intent,
         "format": request.explicit_format,
         "payload_only": request.payload_only,

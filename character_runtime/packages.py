@@ -26,7 +26,7 @@ from .models import (
 )
 from .persistence_models import GrowthCandidate, GrowthVersion, RelationshipState
 from .runtime import Runtime
-from .safety import check_content
+from .safety import SafetyContext, SensitivityClassifier, StorageAuthorization, check_content
 
 
 class PackageV2(Model):
@@ -354,7 +354,9 @@ def export_character(
             project_memories=private["project_memory"],
         )
         _check_import_content(
-            package.model_dump(mode="json"), include_companion or include_private_knowledge
+            package.model_dump(mode="json"),
+            include_companion or include_private_knowledge,
+            runtime.memory.safety_classifier,
         )
         return package
 
@@ -391,7 +393,11 @@ def import_character(
     if len(json.dumps(data, ensure_ascii=False).encode()) > 10_000_000:
         raise ValueError("Character package exceeds 10 MB")
     package = PackageV3.model_validate(migrate_package(data))
-    _check_import_content(package.model_dump(mode="json"), bool(sensitive_confirmation.strip()))
+    _check_import_content(
+        package.model_dump(mode="json"),
+        bool(sensitive_confirmation.strip()),
+        runtime.memory.safety_classifier,
+    )
     new_character = new_id()
     mapping = {m.id: new_id() for m in package.memories}
     raw_mapping = {e.id: new_id() for e in package.raw_events}
@@ -561,13 +567,25 @@ def import_character(
     return definition
 
 
-def _check_import_content(value: Any, confirmed: bool) -> None:
-    """Every persisted string crosses the same safety gate, including legacy packages."""
+def _check_import_content(
+    value: Any, confirmed: bool, classifier: SensitivityClassifier | None = None
+) -> None:
+    """Validate portable strings with the configured gate, including legacy archives.
+
+    可迁移字符串包括旧档案均执行已配置的安全门；不绕过宿主分类器。
+    """
     if isinstance(value, str):
-        check_content(value, confirmed=confirmed)
+        check_content(
+            value,
+            context=SafetyContext(operation_id="package-validation"),
+            authorization=StorageAuthorization.for_content(
+                value, "package-validation", explicit=confirmed
+            ),
+            classifier=classifier,
+        )
     elif isinstance(value, list):
         for item in value:
-            _check_import_content(item, confirmed)
+            _check_import_content(item, confirmed, classifier)
     elif isinstance(value, dict):
         if value.get("sensitivity") == "sensitive" and not confirmed:
             raise ValueError("Sensitive personal content requires explicit storage authorization")
@@ -591,5 +609,5 @@ def _check_import_content(value: Any, confirmed: bool) -> None:
                 and item
             ):
                 raise ValueError("Credential fields are not eligible for character packages")
-            _check_import_content(key, confirmed)
-            _check_import_content(item, confirmed)
+            _check_import_content(key, confirmed, classifier)
+            _check_import_content(item, confirmed, classifier)

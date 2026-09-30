@@ -9,34 +9,15 @@ from typing import Any, Literal
 from pydantic import AwareDatetime, Field
 
 from .cognition import validate_response
-from .conversation_models import EndpointCapabilities
+from .host_protocol import HostCapabilities as HostCapabilities
+from .host_protocol import InputEvidence
 from .knowledge_models import EventBatch, EventInput, TurnProposal
 from .models import Identifier, Model
 from .operations import fingerprint
 from .persistence_models import GenerationRequest
 from .runtime import Runtime
 from .safety import check_content
-from .scope import ScopeResolver
-
-
-class HostCapabilities(EndpointCapabilities):
-    """Declared capability is not authority; absent support stays false.
-
-    能力声明不授予权限；未声明的能力默认不可用。
-    """
-
-    pre_generation: bool = False
-    post_generation: bool = False
-    conversation_history: bool = False
-    participant_identity: bool = False
-    group_identity: bool = False
-    reply_topology: bool = False
-    mentions: bool = False
-    ambient_messages: bool = False
-    tool_events: bool = False
-    voice_output: bool = False
-    message_edit: bool = False
-    reliable_delivery_ack: bool = False
+from .scope import EndpointError, ScopeResolver
 
 
 class TurnEnvelope(Model):
@@ -57,6 +38,15 @@ class TurnEnvelope(Model):
     input_is_verbatim: bool = True
     timestamp: AwareDatetime | None = None
     generation: GenerationRequest = Field(default_factory=GenerationRequest)
+
+    @property
+    def input_evidence(self) -> InputEvidence:
+        """Normalize the legacy wire flag once; lifecycle consumes typed fidelity.
+        一次性规范旧传输标记；生命周期只消费类型化的保真度。
+        """
+        return (
+            InputEvidence.VERIFIED_VERBATIM if self.input_is_verbatim else InputEvidence.TRANSFORMED
+        )
 
 
 class TurnLifecycle:
@@ -96,11 +86,14 @@ class TurnLifecycle:
         if ambient:
             digest_input.append({"ambient": True})
         digest = fingerprint(digest_input)
-        accepted_digests = {digest}
-        if envelope.input_is_verbatim and not ambient:
-            # Earlier prepared turns always ingested verbatim input. Accept only that exact
-            # historical fingerprint; transformed text and ambient turns cannot inherit it.
-            # 旧回合固定提交原文；只兼容完全相同的旧指纹，装饰文本及环境回合不得继承。
+        legacy_capabilities = capabilities.model_dump(
+            exclude={"generation_surfaces", "tool_interception"}
+        )
+        legacy_digest_input = [envelope.model_dump(mode="json"), legacy_capabilities]
+        if ambient:
+            legacy_digest_input.append({"ambient": True})
+        accepted_digests = {digest, fingerprint(legacy_digest_input)}
+        if envelope.input_evidence == InputEvidence.VERIFIED_VERBATIM and not ambient:
             accepted_digests.add(
                 fingerprint(
                     [
@@ -109,11 +102,24 @@ class TurnLifecycle:
                     ]
                 )
             )
+            # Earlier prepared turns always ingested verbatim input. Accept only that exact
+            # historical fingerprint; transformed text and ambient turns cannot inherit it.
+            # 旧回合固定提交原文；只兼容完全相同的旧指纹，装饰文本及环境回合不得继承。
+            accepted_digests.add(
+                fingerprint(
+                    [
+                        envelope.model_dump(mode="json", exclude={"input_is_verbatim"}),
+                        legacy_capabilities,
+                    ]
+                )
+            )
         with self.rt.storage.transaction():
             resolver = ScopeResolver(self.rt.storage, self.rt.owner, self.rt.clock)
             endpoint = resolver._record("platform_binding", envelope.endpoint_id)
             if endpoint["kind"] != envelope.chat_type:
-                raise ValueError("Host audience does not match the endpoint binding")
+                raise EndpointError(
+                    "endpoint_kind_mismatch", "Host audience does not match the endpoint binding"
+                )
             turn = resolver.begin_turn(
                 host=envelope.host_id,
                 platform=envelope.platform,
@@ -160,7 +166,7 @@ class TurnLifecycle:
                             ],
                         )
                     )
-                    if envelope.input_is_verbatim
+                    if envelope.input_evidence == InputEvidence.VERIFIED_VERBATIM
                     else {"event_ids": []}
                 )
                 old = {
@@ -185,10 +191,13 @@ class TurnLifecycle:
             if len(query) > 4000:
                 query = query[:2000] + query[-2000:]
             context = (
-                {} if ambient else scoped.context(turn.id, query, generation=envelope.generation)
+                {}
+                if ambient
+                else scoped.context(turn.session_id, query, generation=envelope.generation)
             )
             return {
                 "turn_id": turn.id,
+                "session_id": turn.session_id,
                 "character_id": turn.character_id,
                 "context": context,
                 "capabilities": old["capabilities"],
@@ -214,7 +223,7 @@ class TurnLifecycle:
         ScopeResolver._ids(operation_id)
         if not text or len(text) > 64000:
             raise ValueError("Generation must contain 1-64000 characters")
-        check_content(text)
+        check_content(text, classifier=self.rt.memory.safety_classifier)
         digest = fingerprint([operation_id, text])
         with self.rt.storage.transaction():
             scoped, record = self._load(turn_id)

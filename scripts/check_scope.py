@@ -10,6 +10,7 @@ from tempfile import TemporaryDirectory
 
 from character_runtime.identity import bind
 from character_runtime.knowledge_models import EventBatch, EventInput, MemoryProposal, TurnProposal
+from character_runtime.lifecycle import HostCapabilities, TurnEnvelope, TurnLifecycle
 from character_runtime.memory import Memories
 from character_runtime.models import Candidate, CharacterDefinition, MemoryScope, now
 from character_runtime.packages import export_character, import_character
@@ -26,6 +27,78 @@ def denied(action) -> None:
     except (ValueError, KeyError):
         return
     raise AssertionError("Unauthorized operation succeeded")
+
+
+def endpoint_lifecycle_checks(path: Path) -> None:
+    """Keep scoped OOC across turns and preserve history after endpoint revocation.
+
+    验证跨轮 OOC；端点撤销后保留历史，但拒绝新回合与旧能力。
+    """
+    store = SQLiteStorage(path)
+    try:
+        rt = Runtime(store, "owner")
+        cid = rt.characters.create(CharacterDefinition(name="scoped-ooc")).id
+        bind(store, "owner", "hermes", "test", "a", "identity", "verified", participant_id="a")
+        resolver = ScopeResolver(store, "owner")
+        endpoint = resolver.bind_endpoint(
+            "test",
+            "cli:default:user",
+            "dm",
+            cid,
+            participant_id="a",
+            operation_id="bind",
+            confirmation="verified",
+        )
+        lifecycle = TurnLifecycle(rt)
+        envelope = TurnEnvelope(
+            host_id="hermes",
+            platform="test",
+            actor_id="a",
+            endpoint_id=endpoint["id"],
+            chat_type="dm",
+            session_id="external-session",
+            turn_id="one",
+            message_id="one",
+            text="hello",
+        )
+        caps = HostCapabilities(pre_generation=True, participant_identity=True)
+        first = lifecycle.prepare(envelope, caps)
+        rt.for_turn(first["turn_id"]).session_control(first["turn_id"], "enter_ooc")
+        second = lifecycle.prepare(
+            envelope.model_copy(update={"turn_id": "two", "message_id": "two"}), caps
+        )
+        assert second["context"]["ooc"]
+        assert not second["context"]["generation_context"]["execution"]["expression"]["contract"][
+            "enabled"
+        ]
+        rt.for_turn(second["turn_id"]).session_control(second["turn_id"], "exit_ooc")
+        third = lifecycle.prepare(
+            envelope.model_copy(update={"turn_id": "three", "message_id": "three"}), caps
+        )
+        assert third["character_id"] == cid and not third["context"]["ooc"]
+        args = dict(
+            operation_id="deactivate",
+            expected_revision=endpoint["revision"],
+            confirmation="verified",
+        )
+        stopped = resolver.deactivate_endpoint(endpoint["id"], **args)
+        assert not stopped["active"] and stopped["revision"] == endpoint["revision"] + 1
+        assert resolver.deactivate_endpoint(endpoint["id"], **args) == stopped
+        assert store.list("owner", "turn_actor"), "History was deleted"
+        denied(lambda: resolver.load_turn(first["turn_id"]))
+        denied(
+            lambda: lifecycle.prepare(
+                envelope.model_copy(update={"turn_id": "four", "message_id": "four"}), caps
+            )
+        )
+        denied(
+            lambda: resolver.deactivate_endpoint(
+                endpoint["id"], **{**args, "operation_id": "stale"}
+            )
+        )
+        assert store.get("owner", "platform_binding", endpoint["id"]) == stopped
+    finally:
+        store.close()
 
 
 def memory_policy_checks(path: Path) -> None:
@@ -189,6 +262,15 @@ async def http_capabilities(path: Path) -> None:
                     },
                 )
                 opened = await call(admin, "host_turn_open", **request)
+                missing = await admin.call_tool(
+                    "host_turn_open",
+                    {**request, "endpoint_id": "group", "request_id": "missing-endpoint"},
+                )
+                assert missing.structured_content["error"] == "endpoint_binding_not_found"
+                mismatch = await admin.call_tool(
+                    "host_turn_open", {**request, "expected_endpoint_kind": "dm"}
+                )
+                assert mismatch.structured_content["error"] == "endpoint_kind_mismatch"
                 await reject(admin, "host_turn_open", **request, expected_endpoint_kind="dm")
                 repeated = await call(admin, "host_turn_open", **request)
                 assert repeated["turn_id"] == opened["turn_id"]
@@ -255,7 +337,7 @@ async def http_capabilities(path: Path) -> None:
                         turn_id="native-one",
                         assistant_response="synthetic result",
                     )
-                    native_tid = native.turns[("native", "native-one")][1]
+                    native_tid = native.turns.get(("native", "native-one")).runtime_turn_id
                     native_record = (
                         Runtime(storage, "owner")
                         .for_turn(native_tid)
@@ -429,12 +511,35 @@ async def http_capabilities(path: Path) -> None:
                         },
                     )
                     await call(model, "runtime_doctor", session_id=tid)
+                    await reject(
+                        model,
+                        "endpoint_control",
+                        action="deactivate",
+                        endpoint_id=endpoint["id"],
+                        expected_revision=endpoint["revision"],
+                        operation_id="model-deactivate",
+                        confirmation="not authority",
+                    )
                     actor = storage.get("owner", "participant", "alice")
                     actor["active"] = False
                     storage.put("owner", "participant", "alice", actor)
                     await reject(model, "runtime_context", session_id=tid)
                     await reject(admin, "host_turn_open", **request)
                 pieces = opened["capability"].split(".")
+                stopped = await call(
+                    admin,
+                    "endpoint_control",
+                    action="deactivate",
+                    endpoint_id=endpoint["id"],
+                    expected_revision=endpoint["revision"],
+                    operation_id="admin-deactivate",
+                    confirmation="verified",
+                )
+                assert not stopped["active"]
+                inactive = await admin.call_tool(
+                    "host_turn_open", {**request, "expected_endpoint_kind": "group"}
+                )
+                assert inactive.structured_content["error"] == "endpoint_inactive"
                 pieces[1] = pieces[1][::-1]
                 async with client(".".join(pieces)) as tampered:
                     response = await tampered.post(
@@ -452,6 +557,7 @@ def main() -> None:
     验证共享会话中的独立说话人，以及重启后仍有效的发送去重。
     """
     with TemporaryDirectory(prefix="agentcosplay-scope-") as directory:
+        endpoint_lifecycle_checks(Path(directory) / "endpoint.sqlite3")
         memory_policy_checks(Path(directory) / "policy.sqlite3")
         asyncio.run(http_capabilities(Path(directory) / "http.sqlite3"))
         path = Path(directory) / "scope.sqlite3"

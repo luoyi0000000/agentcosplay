@@ -10,6 +10,7 @@ from tempfile import TemporaryDirectory
 from typing import get_args
 
 from character_runtime.cognition import expression, expression_frequency, validate_response
+from character_runtime.context_models import ExpressionExecution, UniversalGenerationContext
 from character_runtime.knowledge_models import EventBatch, EventInput
 from character_runtime.models import CharacterDefinition, VoiceProfile, now
 from character_runtime.persistence_models import (
@@ -56,6 +57,47 @@ def main() -> None:
             assert inactive["context_diagnostics"]["active"] is False
             rt.open_session("chat", character_id=cid)
             first = rt.context("chat")["stable_prefix"]
+            for spec in (
+                {},
+                {"intent": "CODING"},
+                {"intent": "ANALYSIS"},
+                {"neutral_expression": True},
+                {"payload_only": True},
+            ):
+                projected = rt.context("chat", generation=GenerationRequest(**spec))
+                universal = UniversalGenerationContext.model_validate(
+                    projected["generation_context"]
+                )
+                execution = universal.execution.expression.contract
+                assert isinstance(execution, ExpressionExecution)
+                assert execution.enabled == (
+                    not spec.get("neutral_expression") and not spec.get("payload_only")
+                )
+                assert execution.resolved.enabled == execution.enabled
+                assert execution.resolved.reasons
+                assert execution.deliverable_body == (
+                    "character_owned" if execution.enabled else "neutral_owned"
+                )
+                assert execution.organization_source == (
+                    "character" if execution.enabled else "neutral"
+                )
+                contradictory = execution.model_dump()
+                contradictory["organization_source"] = (
+                    "neutral" if execution.enabled else "character"
+                )
+                try:
+                    ExpressionExecution.model_validate(contradictory)
+                except ValueError:
+                    pass
+                else:
+                    raise AssertionError("Contradictory expression ownership accepted")
+                assert execution.ownership == "all_model_authored_natural_language"
+                assert execution.effective_voice.explanation_style == voice.explanation_style
+                assert universal.execution.expression.directive == execution.render_directive()
+                assert "Hermes" not in execution.render_directive()
+                assert "complete" in execution.render_directive() if execution.enabled else True
+                assert projected["model_context"] == universal.render()
+                assert universal.render() == universal.render()
             for intent in get_args(GenerationIntent):
                 context = rt.context("chat", generation=GenerationRequest(intent=intent))
                 assert context["stable_prefix"] == first

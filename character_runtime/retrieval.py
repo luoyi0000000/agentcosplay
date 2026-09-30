@@ -5,21 +5,16 @@
 
 import re
 import unicodedata
+from collections.abc import Sequence
 from datetime import datetime
+from typing import Protocol
 
-from .models import Memory
+from pydantic import Field
+
+from .models import Identifier, Memory, Model, Score
 
 WORDS = re.compile(r"[^\W_]+", re.UNICODE)
 CJK = re.compile(r"[\u3400-\u9fff\U00020000-\U0002ffff]+")
-# Small, auditable concept groups improve recall across ordinary phrasing/languages.
-CONCEPTS = (
-    ("sleep", "sleeping", "rest", "睡觉", "睡眠", "休息"),
-    ("work", "working", "job", "工作", "上班"),
-    ("read", "reading", "book", "读书", "阅读", "书籍"),
-    ("travel", "trip", "旅行", "旅游"),
-    ("happy", "happiness", "开心", "高兴"),
-    ("sad", "sadness", "难过", "伤心"),
-)
 
 
 def normalize(text: str) -> str:
@@ -31,7 +26,7 @@ def normalize(text: str) -> str:
     return " ".join(unicodedata.normalize("NFKC", text).casefold().split()).rstrip("。.!！?？")
 
 
-def tokens(text: str, *, concepts: bool = True) -> set[str]:
+def tokens(text: str) -> set[str]:
     """Extract local ranking tokens; tokens do not carry authorization.
 
     提取本地排序词元；词元不携带授权。
@@ -42,10 +37,6 @@ def tokens(text: str, *, concepts: bool = True) -> set[str]:
     result = set(WORDS.findall(CJK.sub(" ", text)))
     for run in CJK.findall(text):
         result.update(run[i : i + 2] for i in range(max(1, len(run) - 1)))
-    if concepts:
-        for index, group in enumerate(CONCEPTS):
-            if any(word in result or (CJK.search(word) and word in text) for word in group):
-                result.add(f"concept{index}")
     return result
 
 
@@ -63,46 +54,122 @@ def duplicate(left: str, right: str) -> bool:
     )
 
 
-def score(
-    memory: Memory,
-    query: str,
-    clock: datetime,
-    *,
-    fts: float = 0,
-    relationship: str = "",
-    current_topic: str = "",
-    unfinished_topics: tuple[str, ...] = (),
-    active_goals: tuple[str, ...] = (),
-) -> dict[str, float]:
-    """Return additive score components; their sum is the final rank.
-
-    返回可相加的评分分量；它们之和构成最终排名。
+class SemanticHit(Model):
+    """Similarity is ranking evidence, not duplicate or truth evidence.
+    相似度只是排序证据，不是重复或事实证据。
     """
-    body = tokens(memory.content, concepts=False)
-    expanded = tokens(memory.content)
 
-    def overlap(text: str, *, semantic: bool = False) -> float:
-        wanted = tokens(text, concepts=semantic)
-        return len(wanted & (expanded if semantic else body)) / max(1, len(wanted))
+    item_id: Identifier
+    score: float = Field(allow_inf_nan=False)
 
+
+class SemanticIndex(Protocol):
+    """Optional derived index; filter namespace AND allowed IDs before computing ranks.
+    可选派生索引；必须在计算排名前限制命名空间和允许的 ID。无后端时只用词法。
+    """
+
+    def upsert(self, namespace: str, item_id: str, text: str) -> None:
+        """Index authorized content only. / 只索引已授权内容。"""
+        ...
+
+    def remove(self, namespace: str, item_id: str) -> None:
+        """Remove derived content on erasure. / 遗忘时删除派生内容。"""
+        ...
+
+    def search(
+        self, namespace: str, query: str, *, allowed_ids: tuple[str, ...], limit: int
+    ) -> Sequence[SemanticHit]:
+        """Rank only authorized IDs; never silently widen scope.
+        只排序已授权 ID，不得静默扩大范围。
+        """
+        ...
+
+
+class RetrievalSignals(Model):
+    """Relevance independent of utility and truth. / 相关度与效用、真实性分离。"""
+
+    lexical_rank: int | None = Field(default=None, ge=1)
+    semantic_rank: int | None = Field(default=None, ge=1)
+    fusion_score: float = Field(default=0, ge=0)
+
+
+class UtilitySignals(Model):
+    """Character usefulness cannot grant access. / 角色效用不能授予访问权。"""
+
+    recency: Score = 0
+    importance: Score = 0
+    relationship: Score = 0
+    current_topic: Score = 0
+    unfinished_topic: Score = 0
+    active_goal: Score = 0
+
+
+class TrustSignals(Model):
+    """Canonical provenance stays distinct from recall rank. / 规范来源与召回排名保持独立。"""
+
+    confidence: Score
+    provenance: str
+    archived: bool
+
+
+class RetrievalDecision(Model):
+    """Ephemeral explainable ranking; never persisted as memory truth.
+    可解释的临时排序，不持久化为记忆真实性。
+    """
+
+    memory_id: Identifier
+    relevance: RetrievalSignals
+    utility: UtilitySignals
+    trust: TrustSignals
+
+    def sort_key(self) -> tuple[float, ...]:
+        """Prefer active records, then relevance; utility and provenance break ties.
+        优先有效记录，再看相关度；效用与来源用于后续排序，不混合原始分数。
+        """
+        u = self.utility
+        return (
+            float(not self.trust.archived),
+            self.relevance.fusion_score,
+            u.current_topic + u.unfinished_topic + u.active_goal,
+            u.relationship,
+            u.importance,
+            u.recency,
+            self.trust.confidence,
+            float(self.trust.provenance in {"user_explicit", "user_material"}),
+        )
+
+
+def rrf(
+    lexical: Sequence[str], semantic: Sequence[str], k: int = 60
+) -> dict[str, RetrievalSignals]:
+    """Fuse ranks only, with stable deduplication of each backend lane.
+    只融合排名；每个后端通道先稳定去重，不混合 BM25 和余弦原分数。
+    """
+    if k < 1:
+        raise ValueError("RRF k must be positive")
+    result: dict[str, RetrievalSignals] = {}
+    for field, lane in (("lexical_rank", lexical), ("semantic_rank", semantic)):
+        for rank, mid in enumerate(dict.fromkeys(lane), 1):
+            signal = result.setdefault(mid, RetrievalSignals())
+            setattr(signal, field, rank)
+            signal.fusion_score += 1 / (k + rank)
+    return result
+
+
+def rank(
+    memory: Memory, relevance: RetrievalSignals, clock: datetime, **hints: float
+) -> RetrievalDecision:
+    """Keep deterministic utility and provenance separate from backend relevance.
+    将确定性效用、来源与后端相关度分离。
+    """
     age = max(0, (clock - (memory.last_observed_at or memory.created_at)).total_seconds() / 86400)
-    return {
-        "lexical": 4 * overlap(query),
-        "local_tokens": overlap(query, semantic=True),
-        "fts": 0.5 * fts,
-        "recency": 0.7 / (1 + age / 30),
-        "importance": 1.2 * memory.importance,
-        "confidence": 0.6 * memory.confidence,
-        "relationship": 0.5 * overlap(relationship)
-        + (0.3 if memory.kind == "relationship" and relationship else 0),
-        "current_topic": 1.5 * overlap(current_topic),
-        "unfinished_topic": max((overlap(v) for v in unfinished_topics), default=0),
-        "active_goal": max((overlap(v) for v in active_goals), default=0),
-        "kind": {"relationship": 0.3, "character_long_term": 0.2, "real_user": 0.2}.get(
-            memory.kind, 0.1
+    return RetrievalDecision(
+        memory_id=memory.id,
+        relevance=relevance,
+        utility=UtilitySignals(recency=1 / (1 + age / 30), importance=memory.importance, **hints),
+        trust=TrustSignals(
+            confidence=memory.confidence,
+            provenance=memory.source,
+            archived=memory.status == "archived",
         ),
-        "provenance": {"user_explicit": 0.4, "user_material": 0.3, "simulated_life": -0.3}.get(
-            memory.source, 0
-        ),
-        "archive": -0.5 if memory.status == "archived" else 0,
-    }
+    )

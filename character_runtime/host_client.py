@@ -131,6 +131,8 @@ class HostBridge:
         turn_id: str,
         tool: str,
         arguments: dict[str, Any],
+        *,
+        session_id: str | None = None,
     ) -> dict[str, Any]:
         """Never substitute an owner token when a turn capability is absent.
 
@@ -138,7 +140,7 @@ class HostBridge:
         """
         if not capability or not turn_id:
             raise ValueError("A verified turn capability is required")
-        arguments = dict(arguments)
-        if "session_id" in arguments and arguments["session_id"] != turn_id:
-            raise ValueError("Model tool session does not match this interaction")
+        from .host_protocol import ScopedToolRouter
+
+        arguments = ScopedToolRouter.arguments(tool, arguments, session_id or turn_id, turn_id)
         return await self.call(tool, arguments, capability=capability)

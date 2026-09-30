@@ -77,7 +77,7 @@ class Growth:
             impact = "medium"
         candidate.impact = impact
         candidate.status = "pending"
-        check_content(candidate.model_dump_json())
+        check_content(candidate.model_dump_json(), classifier=self.k.memory.safety_classifier)
         if self.k.storage.get(self.k.owner, "growth_candidate", candidate.id):
             raise ValueError("Growth candidate ID already exists")
         self.k.storage.put(

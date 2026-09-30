@@ -5,12 +5,20 @@ import json
 from pathlib import Path
 
 from character_runtime.companion_models import CompanionState
-from character_runtime.context_models import CompiledContext, ContextBudget, ContextFragment
+from character_runtime.context_models import (
+    CompiledContext,
+    ContextBudget,
+    ContextFragment,
+    ExpressionExecution,
+    UniversalGenerationContext,
+)
 from character_runtime.conversation_models import (
     EndpointCapabilities,
     InteractionPlan,
     SemanticResponse,
 )
+from character_runtime.host_protocol import HostIngress
+from character_runtime.host_session import HostSessionIdentity
 from character_runtime.knowledge_models import (
     EventBatch,
     FactRecord,
@@ -44,6 +52,9 @@ from character_runtime.persistence_models import (
     RelationshipState,
 )
 from character_runtime.providers import Observation
+from character_runtime.retrieval import RetrievalDecision
+from character_runtime.rules import ExpressionPolicy
+from character_runtime.safety import SafetyDecision, StorageAuthorization
 
 
 def main() -> None:
@@ -70,6 +81,14 @@ def main() -> None:
             f"{m.__name__}.v2": m
             for m in (
                 ContextBudget,
+                HostIngress,
+                HostSessionIdentity,
+                ExpressionPolicy,
+                RetrievalDecision,
+                SafetyDecision,
+                StorageAuthorization,
+                ExpressionExecution,
+                UniversalGenerationContext,
                 HostCapabilities,
                 TurnEnvelope,
                 EndpointCapabilities,

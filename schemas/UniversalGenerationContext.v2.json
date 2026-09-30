@@ -1,0 +1,780 @@
+{
+  "$defs": {
+    "CatchphraseRule": {
+      "additionalProperties": false,
+      "description": "Optional suitability and repetition limits, never mandatory text insertion.\n\n可选适用场景与重复限制，绝不代表必须插入某个口头禅。",
+      "properties": {
+        "phrase": {
+          "maxLength": 80,
+          "minLength": 1,
+          "title": "Phrase",
+          "type": "string"
+        },
+        "usage": {
+          "items": {
+            "maxLength": 80,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 6,
+          "title": "Usage",
+          "type": "array"
+        },
+        "intensity": {
+          "default": "light",
+          "enum": [
+            "light",
+            "normal",
+            "emphatic"
+          ],
+          "title": "Intensity",
+          "type": "string"
+        },
+        "cooldown_seconds": {
+          "default": 120,
+          "maximum": 86400,
+          "minimum": 0,
+          "title": "Cooldown Seconds",
+          "type": "integer"
+        },
+        "avoid_contexts": {
+          "items": {
+            "maxLength": 40,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 12,
+          "title": "Avoid Contexts",
+          "type": "array"
+        }
+      },
+      "required": [
+        "phrase"
+      ],
+      "title": "CatchphraseRule",
+      "type": "object"
+    },
+    "DecisionReason": {
+      "additionalProperties": false,
+      "description": "Explain a decision without embedding private bodies. / 解释决策，不附带私人正文。",
+      "properties": {
+        "code": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Code",
+          "type": "string"
+        },
+        "evidence_refs": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Evidence Refs",
+          "type": "array"
+        }
+      },
+      "required": [
+        "code"
+      ],
+      "title": "DecisionReason",
+      "type": "object"
+    },
+    "DialogueExample": {
+      "additionalProperties": false,
+      "description": "A curated meaning-to-expression example; assistant history is never baseline authority.\n\n精选的语义到人物表达示范；助手历史输出绝不自动成为基线权威。",
+      "properties": {
+        "meaning": {
+          "maxLength": 500,
+          "minLength": 1,
+          "title": "Meaning",
+          "type": "string"
+        },
+        "character": {
+          "maxLength": 1000,
+          "minLength": 1,
+          "title": "Character",
+          "type": "string"
+        }
+      },
+      "required": [
+        "meaning",
+        "character"
+      ],
+      "title": "DialogueExample",
+      "type": "object"
+    },
+    "DiscoursePlan": {
+      "additionalProperties": false,
+      "description": "Defaults do not impose a report or forbid useful structure.\n默认不强加报告结构，也不禁止有用结构。",
+      "properties": {
+        "report_template_default": {
+          "const": false,
+          "default": false,
+          "title": "Report Template Default",
+          "type": "boolean"
+        },
+        "forced_intro": {
+          "const": false,
+          "default": false,
+          "title": "Forced Intro",
+          "type": "boolean"
+        },
+        "forced_conclusion": {
+          "const": false,
+          "default": false,
+          "title": "Forced Conclusion",
+          "type": "boolean"
+        },
+        "exhaustive_default": {
+          "const": false,
+          "default": false,
+          "title": "Exhaustive Default",
+          "type": "boolean"
+        },
+        "headings": {
+          "const": "only_if_useful",
+          "default": "only_if_useful",
+          "title": "Headings",
+          "type": "string"
+        },
+        "lists": {
+          "const": "only_if_useful",
+          "default": "only_if_useful",
+          "title": "Lists",
+          "type": "string"
+        }
+      },
+      "title": "DiscoursePlan",
+      "type": "object"
+    },
+    "ExpressionExecution": {
+      "additionalProperties": false,
+      "description": "Derived per-turn instructions, never an editable personality or learned state.\n\n每轮派生的执行契约，不是可编辑人格或学习状态；声音只来自已解析 VoiceProfile。",
+      "properties": {
+        "enabled": {
+          "title": "Enabled",
+          "type": "boolean"
+        },
+        "resolved": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ExpressionPolicy"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "ownership": {
+          "const": "all_model_authored_natural_language",
+          "default": "all_model_authored_natural_language",
+          "title": "Ownership",
+          "type": "string"
+        },
+        "deliverable_body": {
+          "default": "character_owned",
+          "enum": [
+            "character_owned",
+            "neutral_owned"
+          ],
+          "title": "Deliverable Body",
+          "type": "string"
+        },
+        "exceptions": {
+          "default": [
+            "explicit_ooc",
+            "explicit_neutral_expression",
+            "payload_only",
+            "protected_payload"
+          ],
+          "items": {
+            "enum": [
+              "explicit_ooc",
+              "explicit_neutral_expression",
+              "payload_only",
+              "protected_payload"
+            ],
+            "type": "string"
+          },
+          "title": "Exceptions",
+          "type": "array"
+        },
+        "organization_source": {
+          "default": "character",
+          "enum": [
+            "character",
+            "neutral"
+          ],
+          "title": "Organization Source",
+          "type": "string"
+        },
+        "structure_only_when_useful": {
+          "const": true,
+          "default": true,
+          "title": "Structure Only When Useful",
+          "type": "boolean"
+        },
+        "default_report_template": {
+          "const": false,
+          "default": false,
+          "title": "Default Report Template",
+          "type": "boolean"
+        },
+        "forced_intro": {
+          "const": false,
+          "default": false,
+          "title": "Forced Intro",
+          "type": "boolean"
+        },
+        "forced_conclusion": {
+          "const": false,
+          "default": false,
+          "title": "Forced Conclusion",
+          "type": "boolean"
+        },
+        "forced_exhaustive_coverage": {
+          "const": false,
+          "default": false,
+          "title": "Forced Exhaustive Coverage",
+          "type": "boolean"
+        },
+        "rhetoric": {
+          "$ref": "#/$defs/RhetoricPolicy"
+        },
+        "effective_voice": {
+          "$ref": "#/$defs/VoiceProfile"
+        },
+        "policy": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "title": "Policy",
+          "type": "object"
+        },
+        "turn_local": {
+          "const": true,
+          "default": true,
+          "title": "Turn Local",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "enabled",
+        "effective_voice",
+        "policy"
+      ],
+      "title": "ExpressionExecution",
+      "type": "object"
+    },
+    "ExpressionPolicy": {
+      "additionalProperties": false,
+      "description": "Resolve turn suppression in code; task expertise never changes identity.\n用代码解析单轮表达抑制；专业任务不改变身份。",
+      "properties": {
+        "enabled": {
+          "title": "Enabled",
+          "type": "boolean"
+        },
+        "ownership": {
+          "$ref": "#/$defs/OwnershipPolicy"
+        },
+        "discourse": {
+          "$ref": "#/$defs/DiscoursePlan"
+        },
+        "reasons": {
+          "items": {
+            "$ref": "#/$defs/DecisionReason"
+          },
+          "title": "Reasons",
+          "type": "array"
+        }
+      },
+      "required": [
+        "enabled",
+        "ownership",
+        "reasons"
+      ],
+      "title": "ExpressionPolicy",
+      "type": "object"
+    },
+    "ExpressionProjection": {
+      "additionalProperties": false,
+      "description": "Pair structured execution and its checked rendering; reject semantic drift.\n\n将结构化执行与渲染结果绑定；拒绝渲染内容和契约不一致。",
+      "properties": {
+        "contract": {
+          "$ref": "#/$defs/ExpressionExecution"
+        },
+        "directive": {
+          "title": "Directive",
+          "type": "string"
+        }
+      },
+      "required": [
+        "contract",
+        "directive"
+      ],
+      "title": "ExpressionProjection",
+      "type": "object"
+    },
+    "GenerationExecution": {
+      "additionalProperties": false,
+      "description": "The required expression slot precedes authorized data. / 必需表达槽位于授权数据之前。",
+      "properties": {
+        "expression": {
+          "$ref": "#/$defs/ExpressionProjection"
+        }
+      },
+      "required": [
+        "expression"
+      ],
+      "title": "GenerationExecution",
+      "type": "object"
+    },
+    "GenerationRequest": {
+      "additionalProperties": false,
+      "description": "Host-declared task intent; only explicit user format choices suppress expression.\n\n宿主声明任务意图；只有明确的用户格式选择才会关闭角色表达。",
+      "properties": {
+        "protected_payloads": {
+          "items": {
+            "$ref": "#/$defs/ProtectedPayload"
+          },
+          "maxItems": 20,
+          "title": "Protected Payloads",
+          "type": "array"
+        },
+        "serious_safety": {
+          "default": false,
+          "title": "Serious Safety",
+          "type": "boolean"
+        },
+        "payload_only": {
+          "default": false,
+          "title": "Payload Only",
+          "type": "boolean"
+        },
+        "neutral_expression": {
+          "default": false,
+          "title": "Neutral Expression",
+          "type": "boolean"
+        },
+        "intent": {
+          "default": "CASUAL_CHAT",
+          "enum": [
+            "CASUAL_CHAT",
+            "SOCIAL",
+            "EMOTIONAL_SUPPORT",
+            "FACTUAL_QA",
+            "EXPLANATION",
+            "ANALYSIS",
+            "CODING",
+            "WRITING",
+            "TRANSLATION",
+            "TOOL_TASK",
+            "CREATIVE"
+          ],
+          "title": "Intent",
+          "type": "string"
+        },
+        "explicit_format": {
+          "default": "natural",
+          "enum": [
+            "natural",
+            "json",
+            "code",
+            "verbatim"
+          ],
+          "title": "Explicit Format",
+          "type": "string"
+        },
+        "length_request": {
+          "default": "",
+          "maxLength": 200,
+          "title": "Length Request",
+          "type": "string"
+        },
+        "platform_constraints": {
+          "default": "",
+          "maxLength": 300,
+          "title": "Platform Constraints",
+          "type": "string"
+        }
+      },
+      "title": "GenerationRequest",
+      "type": "object"
+    },
+    "GenerationTask": {
+      "additionalProperties": false,
+      "description": "Keep Runtime session ID and current task constraints separate from Host IDs.\n\nRuntime 会话标识与本轮任务约束单列，不把宿主外部会话标识当成 Runtime 标识。",
+      "properties": {
+        "session_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Session Id",
+          "type": "string"
+        },
+        "generation_request": {
+          "$ref": "#/$defs/GenerationRequest"
+        }
+      },
+      "required": [
+        "session_id",
+        "generation_request"
+      ],
+      "title": "GenerationTask",
+      "type": "object"
+    },
+    "JsonValue": {},
+    "OwnershipPolicy": {
+      "additionalProperties": false,
+      "description": "Exact payloads are local exceptions to generated prose ownership.\n精确载荷只是自拟自然语言归属的局部例外。",
+      "properties": {
+        "generated_natural_language": {
+          "default": "character",
+          "enum": [
+            "character",
+            "neutral"
+          ],
+          "title": "Generated Natural Language",
+          "type": "string"
+        },
+        "protected_payload": {
+          "const": "explicit_only",
+          "default": "explicit_only",
+          "title": "Protected Payload",
+          "type": "string"
+        }
+      },
+      "title": "OwnershipPolicy",
+      "type": "object"
+    },
+    "ProtectedPayload": {
+      "additionalProperties": false,
+      "description": "Exact host/user content that voice and delivery planning must preserve verbatim.\n\n宿主或用户指定的精确内容；表达与投递规划不得改写，内容始终属于数据。",
+      "properties": {
+        "kind": {
+          "enum": [
+            "CODE",
+            "JSON",
+            "VERBATIM",
+            "COMMAND",
+            "URL",
+            "QUOTE",
+            "EXACT_NUMERIC_DATA",
+            "TOOL_OUTPUT"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "content": {
+          "maxLength": 64000,
+          "minLength": 1,
+          "title": "Content",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "content"
+      ],
+      "title": "ProtectedPayload",
+      "type": "object"
+    },
+    "RhetoricPolicy": {
+      "additionalProperties": false,
+      "description": "Semantic habits, not a blacklist of useful words. / 约束修辞行为，不禁用有用词语。",
+      "properties": {
+        "canned_transitions": {
+          "const": "avoid",
+          "default": "avoid",
+          "title": "Canned Transitions",
+          "type": "string"
+        },
+        "redundant_paraphrase": {
+          "const": "avoid",
+          "default": "avoid",
+          "title": "Redundant Paraphrase",
+          "type": "string"
+        },
+        "meta_preamble": {
+          "const": "avoid",
+          "default": "avoid",
+          "title": "Meta Preamble",
+          "type": "string"
+        },
+        "manufactured_contrast": {
+          "const": "avoid",
+          "default": "avoid",
+          "title": "Manufactured Contrast",
+          "type": "string"
+        },
+        "forced_reframing": {
+          "const": "avoid",
+          "default": "avoid",
+          "title": "Forced Reframing",
+          "type": "string"
+        },
+        "forced_summary": {
+          "const": "avoid",
+          "default": "avoid",
+          "title": "Forced Summary",
+          "type": "string"
+        },
+        "repeated_pattern": {
+          "const": "vary",
+          "default": "vary",
+          "title": "Repeated Pattern",
+          "type": "string"
+        },
+        "real_contrast": {
+          "const": "allowed",
+          "default": "allowed",
+          "title": "Real Contrast",
+          "type": "string"
+        }
+      },
+      "title": "RhetoricPolicy",
+      "type": "object"
+    },
+    "VoiceProfile": {
+      "additionalProperties": false,
+      "description": "One portable voice model for conversation and professional tasks alike.\n\n闲聊与专业任务共用同一可迁移表达模型，不建立第二套任务人格。",
+      "properties": {
+        "preferred_vocabulary": {
+          "items": {
+            "maxLength": 80,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 8,
+          "title": "Preferred Vocabulary",
+          "type": "array"
+        },
+        "avoided_vocabulary": {
+          "items": {
+            "maxLength": 80,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 8,
+          "title": "Avoided Vocabulary",
+          "type": "array"
+        },
+        "sentence_rhythm": {
+          "default": "natural varied rhythm",
+          "maxLength": 300,
+          "title": "Sentence Rhythm",
+          "type": "string"
+        },
+        "explanation_style": {
+          "default": "character-appropriate, clear causal reasoning",
+          "maxLength": 300,
+          "title": "Explanation Style",
+          "type": "string"
+        },
+        "analogy_style": {
+          "default": "only when useful",
+          "maxLength": 300,
+          "title": "Analogy Style",
+          "type": "string"
+        },
+        "evaluation_style": {
+          "default": "direct with factual conditions intact",
+          "maxLength": 300,
+          "title": "Evaluation Style",
+          "type": "string"
+        },
+        "disagreement_style": {
+          "default": "state the reason respectfully",
+          "maxLength": 300,
+          "title": "Disagreement Style",
+          "type": "string"
+        },
+        "question_style": {
+          "default": "ask only useful follow-up questions",
+          "maxLength": 300,
+          "title": "Question Style",
+          "type": "string"
+        },
+        "verbosity_default": {
+          "default": "balanced",
+          "enum": [
+            "brief",
+            "balanced",
+            "detailed"
+          ],
+          "title": "Verbosity Default",
+          "type": "string"
+        },
+        "sentence_length": {
+          "default": "varied",
+          "enum": [
+            "short",
+            "varied",
+            "long"
+          ],
+          "title": "Sentence Length",
+          "type": "string"
+        },
+        "directness": {
+          "default": "direct",
+          "enum": [
+            "gentle",
+            "direct",
+            "blunt"
+          ],
+          "title": "Directness",
+          "type": "string"
+        },
+        "addressing_style": {
+          "default": "natural",
+          "maxLength": 300,
+          "title": "Addressing Style",
+          "type": "string"
+        },
+        "self_reference_style": {
+          "default": "natural",
+          "maxLength": 300,
+          "title": "Self Reference Style",
+          "type": "string"
+        },
+        "humor_style": {
+          "default": "character-appropriate",
+          "maxLength": 300,
+          "title": "Humor Style",
+          "type": "string"
+        },
+        "emotional_expressiveness": {
+          "default": "balanced",
+          "enum": [
+            "reserved",
+            "balanced",
+            "expressive"
+          ],
+          "title": "Emotional Expressiveness",
+          "type": "string"
+        },
+        "catchphrase_rules": {
+          "items": {
+            "$ref": "#/$defs/CatchphraseRule"
+          },
+          "maxItems": 8,
+          "title": "Catchphrase Rules",
+          "type": "array"
+        },
+        "catchphrases": {
+          "items": {
+            "maxLength": 4000,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 8,
+          "title": "Catchphrases",
+          "type": "array"
+        },
+        "stage_direction_policy": {
+          "default": "occasional",
+          "enum": [
+            "none",
+            "occasional",
+            "expressive"
+          ],
+          "title": "Stage Direction Policy",
+          "type": "string"
+        },
+        "repetition_tolerance": {
+          "default": "low",
+          "enum": [
+            "low",
+            "normal"
+          ],
+          "title": "Repetition Tolerance",
+          "type": "string"
+        },
+        "preferred_patterns": {
+          "items": {
+            "maxLength": 80,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 8,
+          "title": "Preferred Patterns",
+          "type": "array"
+        },
+        "avoided_patterns": {
+          "items": {
+            "maxLength": 80,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 8,
+          "title": "Avoided Patterns",
+          "type": "array"
+        },
+        "dialogue_examples": {
+          "items": {
+            "anyOf": [
+              {
+                "maxLength": 4000,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "$ref": "#/$defs/DialogueExample"
+              }
+            ]
+          },
+          "maxItems": 10,
+          "title": "Dialogue Examples",
+          "type": "array"
+        }
+      },
+      "title": "VoiceProfile",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "One logical generation slot for every Host; authorized data cannot grant authority.\n\n所有宿主共用同一逻辑生成槽；已授权数据也不能授予操作权限或覆盖平台规则。",
+  "properties": {
+    "schema_version": {
+      "const": 1,
+      "default": 1,
+      "title": "Schema Version",
+      "type": "integer"
+    },
+    "identity": {
+      "additionalProperties": {
+        "$ref": "#/$defs/JsonValue"
+      },
+      "title": "Identity",
+      "type": "object"
+    },
+    "execution": {
+      "$ref": "#/$defs/GenerationExecution"
+    },
+    "context": {
+      "additionalProperties": {
+        "items": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "title": "Context",
+      "type": "object"
+    },
+    "request": {
+      "$ref": "#/$defs/GenerationTask"
+    }
+  },
+  "required": [
+    "identity",
+    "execution",
+    "context",
+    "request"
+  ],
+  "title": "UniversalGenerationContext",
+  "type": "object",
+  "$schema": "https://json-schema.org/draft/2020-12/schema"
+}

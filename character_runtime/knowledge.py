@@ -25,7 +25,7 @@ from .operations import Operations, fingerprint
 from .persistence_models import GrowthCandidate, RecallRequest
 from .relationship import Relationships
 from .retrieval import tokens
-from .safety import SENSITIVE, check_content
+from .safety import SafetyContext, SafetyDecision, StorageAuthorization, check_content
 from .storage import Storage
 
 
@@ -205,6 +205,7 @@ class Knowledge:
 
             def apply() -> dict[str, Any]:
                 ids = []
+                safety_decisions = []
                 for incoming in batch.events:
                     actor = getattr(self.storage, "actor", None)
                     if actor and incoming.source_kind == "USER_DIRECT":
@@ -236,11 +237,21 @@ class Knowledge:
                                 "Direct platform evidence requires a matching "
                                 "verified identity binding"
                             )
-                    check_content(
+                    safety = check_content(
                         incoming.model_dump_json(),
-                        sensitive=incoming.sensitivity == "sensitive",
-                        confirmed=session.ooc and bool(batch.sensitive_confirmation.strip()),
+                        context=SafetyContext(
+                            operation_id=batch.operation_id,
+                            provenance=incoming.source_kind,
+                            declared_sensitive=incoming.sensitivity == "sensitive",
+                        ),
+                        authorization=StorageAuthorization.for_content(
+                            incoming.model_dump_json(),
+                            batch.operation_id,
+                            explicit=session.ooc and bool(batch.sensitive_confirmation.strip()),
+                        ),
+                        classifier=self.memory.safety_classifier,
                     )
+                    safety_decisions.append(safety.model_dump(mode="json"))
                     key = fingerprint([character_id, incoming.source_id, incoming.source_event_id])
                     old = self.storage.get(self.owner, "raw_event", key)
                     digest = fingerprint(incoming.model_dump(mode="json"))
@@ -255,7 +266,7 @@ class Knowledge:
                                 incoming.model_dump()
                                 | {
                                     "sensitivity": "sensitive"
-                                    if SENSITIVE.search(incoming.content)
+                                    if safety.assessment.sensitive
                                     else incoming.sensitivity
                                 }
                             ),
@@ -286,7 +297,12 @@ class Knowledge:
                         last.timestamp,
                         expected_revision=batch.checkpoint_revision,
                     )
-                return {"event_ids": ids, "retention": "RAW_ONLY", "checkpoint": checkpoint}
+                return {
+                    "event_ids": ids,
+                    "retention": "RAW_ONLY",
+                    "checkpoint": checkpoint,
+                    "safety_decisions": safety_decisions,
+                }
 
             return ops.execute(
                 batch.operation_id,
@@ -314,11 +330,31 @@ class Knowledge:
 
             def apply() -> dict[str, Any]:
                 memory_ids, fact_ids, narrative_ids, retention = [], [], [], []
+                safety_decisions = []
+
+                def guard(content: str, sensitive: bool, confirmed: bool) -> SafetyDecision:
+                    # Confirmation is bound here after session/evidence authorization.
+                    # 在会话与证据授权之后，将确认绑定本操作与精确正文。
+                    decision = check_content(
+                        content,
+                        context=SafetyContext(
+                            operation_id=proposal.operation_id,
+                            declared_sensitive=sensitive,
+                            provenance="AUTHORIZED_EVIDENCE",
+                        ),
+                        authorization=StorageAuthorization.for_content(
+                            content, proposal.operation_id, explicit=confirmed
+                        ),
+                        classifier=self.memory.safety_classifier,
+                    )
+                    safety_decisions.append(decision.model_dump(mode="json"))
+                    return decision
+
                 for p in proposal.memory_proposals:
                     events = self.evidence(cid, p.evidence_refs)
                     sensitive = any(e.sensitivity == "sensitive" for e in events)
                     confirmed = session.ooc and bool(p.sensitive_confirmation.strip())
-                    check_content(p.content, sensitive=sensitive, confirmed=confirmed)
+                    sensitive = guard(p.content, sensitive, confirmed).assessment.sensitive
                     if p.kind == "real_user":
                         raise ValueError(
                             "Use OOC FactProposal or explicit memory promotion for owner facts"
@@ -390,7 +426,9 @@ class Knowledge:
                         candidate,
                         session.id,
                         turn_id=proposal.operation_id,
-                        confirmed=confirmed,
+                        authorization=StorageAuthorization.for_content(
+                            candidate.content, proposal.operation_id, explicit=confirmed
+                        ),
                     )
                     memory.evidence_refs = p.evidence_refs
                     memory.event_at = max(e.timestamp for e in events)
@@ -444,7 +482,7 @@ class Knowledge:
                             "Owner facts require direct user evidence and OOC storage confirmation"
                         )
                     sensitive = any(e.sensitivity == "sensitive" for e in events)
-                    check_content(fp.value, sensitive=sensitive, confirmed=confirmed)
+                    sensitive = guard(fp.value, sensitive, confirmed).assessment.sensitive
                     if not any(fp.value in e.content for e in events):
                         raise ValueError("P0 facts must preserve an exact evidence excerpt")
                     active = [
@@ -502,9 +540,7 @@ class Knowledge:
                     fact_ids.append(fact.id)
                 for np in proposal.narrative_proposals:
                     events = self.evidence(cid, np.evidence_refs)
-                    check_content(
-                        np.content, sensitive=any(e.sensitivity == "sensitive" for e in events)
-                    )
+                    guard(np.content, any(e.sensitivity == "sensitive" for e in events), False)
                     nid = new_id()
                     self.storage.put(
                         self.owner,
@@ -532,7 +568,13 @@ class Knowledge:
                         raise ValueError(
                             "Settings require OOC; use affect_effects for automatic emotion"
                         )
-                    companion = Companion(self.storage, self.owner, self.characters, self.clock)
+                    companion = Companion(
+                        self.storage,
+                        self.owner,
+                        self.characters,
+                        self.clock,
+                        safety_classifier=self.memory.safety_classifier,
+                    )
                     previous = companion.get(cid)
                     for item in (change.goal, change.habit, change.topic):
                         if item and not item.evidence_ids:
@@ -560,7 +602,9 @@ class Knowledge:
                             collection="companion",
                             session_id=session_id,
                         )
-                    check_content(change.model_dump_json())
+                    check_content(
+                        change.model_dump_json(), classifier=self.memory.safety_classifier
+                    )
                     companion.update(cid, change)
                 for effect in proposal.relationship_effects:
                     self.relationship.effect(cid, effect)
@@ -619,6 +663,7 @@ class Knowledge:
                     "narrative_ids": narrative_ids,
                     "growth_results": growth_results,
                     "retention": retention,
+                    "safety_decisions": safety_decisions,
                     "turn_count": state.turn_count if state else None,
                     "state_revision": state.revision if state else None,
                 }
@@ -684,17 +729,32 @@ class Knowledge:
                         memory.content, request.content, proposed="CORRECTION"
                     )
                     events = self.evidence(cid, request.evidence_refs)
-                    check_content(
+                    safety = check_content(
                         request.content,
-                        sensitive=any(e.sensitivity == "sensitive" for e in events),
-                        confirmed=bool(request.confirmation.strip()),
+                        context=SafetyContext(
+                            operation_id=request.operation_id,
+                            declared_sensitive=any(e.sensitivity == "sensitive" for e in events),
+                        ),
+                        authorization=StorageAuthorization.for_content(
+                            request.content,
+                            request.operation_id,
+                            explicit=bool(request.confirmation.strip()),
+                        ),
+                        classifier=self.memory.safety_classifier,
                     )
                     memory = self.memory.modify(
                         cid,
                         memory.id,
                         content=request.content,
-                        confirmed=bool(request.confirmation.strip()),
+                        operation_id=request.operation_id,
+                        authorization=StorageAuthorization.for_content(
+                            request.content,
+                            request.operation_id,
+                            explicit=bool(request.confirmation.strip()),
+                        ),
                     )
+                    if safety.assessment.sensitive:
+                        memory.sensitivity = "sensitive"
                     memory.evidence_refs = request.evidence_refs
                     memory.legacy_unverified = False
                     memory.authority = "USER_MANUAL"
@@ -707,11 +767,22 @@ class Knowledge:
                     events = self.evidence(cid, memory.evidence_refs)
                     if any(e.source_kind != "USER_DIRECT" for e in events):
                         raise ValueError("Only direct user evidence may be promoted")
-                    check_content(
+                    safety = check_content(
                         memory.content,
-                        sensitive=memory.sensitivity == "sensitive",
-                        confirmed=bool(request.confirmation.strip()),
+                        context=SafetyContext(
+                            operation_id=request.operation_id,
+                            declared_sensitive=memory.sensitivity == "sensitive",
+                        ),
+                        authorization=StorageAuthorization.for_content(
+                            memory.content,
+                            request.operation_id,
+                            explicit=bool(request.confirmation.strip()),
+                        ),
+                        classifier=self.memory.safety_classifier,
                     )
+                    if safety.assessment.sensitive:
+                        memory.sensitivity = "sensitive"
+                        self.memory._save(memory)
                     memory = self.memory.promote(cid, memory.id, confirmation=request.confirmation)
                 return {"memory_id": memory.id, "status": memory.status, "conflict": conflict}
 
@@ -783,7 +854,13 @@ class Knowledge:
                     changed = True
         from .companion import Companion
 
-        companion = Companion(self.storage, self.owner, self.characters, self.clock)
+        companion = Companion(
+            self.storage,
+            self.owner,
+            self.characters,
+            self.clock,
+            safety_classifier=self.memory.safety_classifier,
+        )
         companion_state = companion.get(character_id)
         removed_topics = {
             "topic:" + t.id for t in companion_state.topics if refs.intersection(t.evidence_ids)

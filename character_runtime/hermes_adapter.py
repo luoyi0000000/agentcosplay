@@ -13,24 +13,39 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from .host_client import HostBridge
+from .host_protocol import (
+    UNAVAILABLE,
+    HostIngress,
+    InputEvidence,
+    ProjectionMapper,
+    ScopedToolRouter,
+    UniversalHostAdapter,
+)
+from .host_protocol import stable_host_key as _key
 
-UNAVAILABLE = "agentcosplay unavailable: no verified Runtime context; do not invent memories."
 
-
-def _key(*parts: str) -> str:
-    return hashlib.sha256(json.dumps(parts, ensure_ascii=True).encode()).hexdigest()
-
-
-class HermesAdapter:
+class HermesAdapter(UniversalHostAdapter):
     """Bind explicit platform routes; cache only transient input and turn capabilities.
 
     仅匹配显式平台路由；缓存只含瞬时输入和单轮令牌，不维护第二份长期状态。
     """
 
-    def __init__(self, url: str, token_file: Path, host: str, routes: list[dict[str, str]]) -> None:
-        self.bridge = HostBridge(url, token_file)
-        self.host = host
+    def __init__(
+        self,
+        url: str,
+        token_file: Path,
+        host: str,
+        routes: list[dict[str, str]],
+        *,
+        cli_binding: dict[str, str] | None = None,
+    ) -> None:
+        super().__init__(url, token_file, host)
+        self.cli_binding = dict(cli_binding or {})
+        if self.cli_binding and not all(
+            isinstance(self.cli_binding.get(key), str) and 0 < len(self.cli_binding[key]) <= 200
+            for key in ("actor_id", "runtime_platform", "endpoint_id")
+        ):
+            raise ValueError("Explicit CLI actor, platform and endpoint required")
         self.routes: dict[tuple[str, ...], dict[str, str]] = {}
         for route in routes:
             fields = ("platform", "chat_id", "thread_id", "chat_type")
@@ -51,7 +66,6 @@ class HermesAdapter:
             raise ValueError("A stable Host ID is required")
         self.lock = threading.Lock()
         self.inputs: OrderedDict[str, tuple[float, dict[str, Any]]] = OrderedDict()
-        self.turns: OrderedDict[tuple[str, str], tuple[str, str]] = OrderedDict()
 
     def capture(self, *, event: Any, **kwargs: Any) -> None:
         """Observe raw input without granting authority before gateway authentication.
@@ -113,6 +127,7 @@ class HermesAdapter:
         turn_id: str = "",
         user_message: str = "",
         sender_id: str = "",
+        platform: str = "",
         parent_session_id: str = "",
         **kwargs: Any,
     ) -> str:
@@ -121,15 +136,21 @@ class HermesAdapter:
         宿主正式调度后才投影上下文；拒绝未知 Actor 和未授权的子 Agent 继承身份。
         """
         cache_key = (session_id, turn_id)
-        with self.lock:
-            self.turns.pop(cache_key, None)
+        self.turns.discard(cache_key)
         try:
             route_key = tuple(
                 env.get("HERMES_SESSION_" + k, "")
                 for k in ("PLATFORM", "CHAT_ID", "THREAD_ID", "CHAT_TYPE")
             )
-            route = self.routes[route_key]
-            actor = env.get("HERMES_SESSION_USER_ID", "")
+            # CLI identity comes from explicit trusted configuration, never owner guessing.
+            # CLI 身份来自显式可信配置，绝不猜测 Owner；原生会话 ID 由官方 hook 提供。
+            is_cli = platform == "cli" and not route_key[0]
+            if is_cli:
+                route = {**self.cli_binding, "kind": "dm"}
+                actor = self.cli_binding.get("actor_id", "")
+            else:
+                route = self.routes[route_key]
+                actor = env.get("HERMES_SESSION_USER_ID", "")
             if (
                 not session_id
                 or not turn_id
@@ -159,34 +180,45 @@ class HermesAdapter:
             if captured and time.monotonic() - captured[0] < 300:
                 if captured[1]["content"] == user_message:
                     request.update(input_is_verbatim=True, timestamp=captured[1]["timestamp"])
-            opened = await self.bridge.call(
-                "host_prepare_turn",
-                {
-                    "envelope": request,
-                    "capabilities": {
-                        "pre_generation": True,
-                        "post_generation": True,
-                        "participant_identity": True,
-                        "group_identity": True,
-                        "reliable_delivery_ack": False,
-                    },
-                },
+            verified = request.pop("input_is_verbatim")
+            timestamp = request.pop("timestamp", None)
+            turn = await self.prepare_turn(
+                cache_key,
+                HostIngress.model_validate(
+                    {
+                        **request,
+                        "input_evidence": InputEvidence.VERIFIED_VERBATIM
+                        if verified
+                        else InputEvidence.TRANSFORMED,
+                        "source_timestamp": timestamp,
+                    }
+                ),
             )
-            capability, runtime_turn = opened["capability"], opened["turn_id"]
-            result = opened["context"]
-            with self.lock:
-                self.turns[cache_key] = (capability, runtime_turn)
-                while len(self.turns) > 128:
-                    self.turns.popitem(last=False)
-            return (
-                str(result["stable_prefix"])
-                + "\nRuntime session_id: "
-                + str(runtime_turn)
-                + "\nTurn-local context:\n"
-                + json.dumps(result["temporary"], ensure_ascii=False)
-            )
+            return turn.generation_context.render()
         except Exception:
             return UNAVAILABLE
+
+    def generation_request(
+        self, request: dict[str, Any], *, session_id: str = "", turn_id: str = "", **kwargs: Any
+    ) -> dict[str, Any]:
+        """Map one full Runtime projection into the official per-request native slot.
+
+        将完整 Runtime 投影映射到官方单次请求槽；不走 hook spill，不修改宿主历史。
+        Platform instructions stay first; the character contract precedes user/tool data.
+        平台指令在前，角色契约位于用户与工具数据之前；不生成宿主专用人格规则。
+        """
+        turn = self.turns.get((session_id, turn_id))
+        mapped = ProjectionMapper.apply(request, turn.generation_context if turn else None)
+        for tool in mapped.get("tools", []):
+            native = tool.get("function", tool)
+            name = native.get("name", "")
+            if name.startswith("mcp__agentcosplay__"):
+                field = "input_schema" if "input_schema" in native else "parameters"
+                if field in native:
+                    native[field] = ScopedToolRouter.schema(
+                        name.removeprefix("mcp__agentcosplay__"), native[field]
+                    )
+        return mapped
 
     async def observe(
         self,
@@ -201,23 +233,9 @@ class HermesAdapter:
         只观察官方最终生成正文；忽略历史及隐藏推理，不产生投递确认。
         """
         try:
-            with self.lock:
-                _, runtime_turn = self.turns[(session_id, turn_id)]
-            await self.bridge.call(
-                "host_observe_generation",
-                {
-                    "turn_id": runtime_turn,
-                    "operation_id": _key(runtime_turn, "generation"),
-                    "text": assistant_response,
-                },
-            )
-            await self.bridge.call(
-                "host_finalize_turn",
-                {"turn_id": runtime_turn, "operation_id": _key(runtime_turn, "finalize")},
-            )
+            await self.observe_turn((session_id, turn_id), assistant_response)
         except Exception:
-            # Host hooks must not leak private text or tokens through exception logs.
-            # 宿主钩子失败不得通过异常日志泄漏私人正文或令牌。
+            # Host logs must not receive private response bodies. / 宿主日志不得收到私人正文。
             return
 
     async def tool(
@@ -227,23 +245,20 @@ class HermesAdapter:
 
         截获现有 MCP 工具，不注册重复 API，也不回退 Owner 凭据。
         """
-        try:
-            with self.lock:
-                capability, runtime_turn = self.turns[(session_id, turn_id)]
-            result = await self.bridge.model_call(capability, runtime_turn, tool, arguments)
-            return json.dumps({"ok": True, "result": result}, ensure_ascii=False)
-        except Exception:
-            return json.dumps({"ok": False, "error": "Verified Runtime turn required"})
+        return json.dumps(
+            await self.execute_tool((session_id, turn_id), tool, arguments), ensure_ascii=False
+        )
 
-    def clear(self, *, session_id: str = "", **kwargs: Any) -> None:
+    def clear(self, *, session_id: str = "", old_session_id: str = "", **kwargs: Any) -> None:
         """Drop session capabilities without resetting canonical memory or bindings.
 
         仅清除会话能力令牌，不重置长期记忆和身份绑定。
         """
-        with self.lock:
-            for key in list(self.turns):
-                if key[0] == session_id:
-                    del self.turns[key]
+        # Reset hooks may report the replacement ID; revoke the explicit old handle too.
+        # reset 钩子可能提供新 ID；同时撤销明确给出的旧句柄。每轮结束不注销持久映射。
+        for native_id in (session_id, old_session_id):
+            if native_id:
+                self.turns.clear(native_id)
 
 
 def register(ctx: Any, root: Path) -> None:
@@ -262,6 +277,7 @@ def register(ctx: Any, root: Path) -> None:
         Path(ctx.get_config("token_file")),
         ctx.get_config("host_id", "hermes"),
         ctx.get_config("routes", []),
+        cli_binding=ctx.get_config("cli_binding", None),
     )
     with adapter.bridge.token_file.open(encoding="ascii") as source:
         owner_token = source.read(4097).strip()
@@ -278,12 +294,23 @@ def register(ctx: Any, root: Path) -> None:
     ):
         raise ValueError("Connect Hermes with --native-hermes before enabling the plugin")
 
-    async def pre_llm_call(**kwargs: Any) -> str:
+    async def pre_llm_call(**kwargs: Any) -> None:
         env = {
             "HERMES_SESSION_" + k: get_session_env("HERMES_SESSION_" + k)
             for k in ("PLATFORM", "CHAT_ID", "CHAT_TYPE", "THREAD_ID", "USER_ID", "MESSAGE_ID")
         }
-        return await adapter.context(env, **kwargs)
+        await adapter.context(env, **kwargs)
+
+    def llm_request(request: dict[str, Any], **kwargs: Any) -> dict[str, Any]:
+        try:
+            return {"request": adapter.generation_request(request, **kwargs)}
+        except Exception:
+            # Official middleware exceptions restore the original kwargs. Returning an
+            # empty request removes ALL payload/credentials instead; providers cannot
+            # generate from a stale private projection. Never log the rejected kwargs.
+            # 官方中间件异常会恢复原参数；返回空请求使旧私密投影无法发送给模型。
+            # 空请求缺必需参数而失败，不记录被拒请求，也不假装生成成功。
+            return {"request": {}}
 
     def tool_execution(
         tool_name: str,
@@ -311,4 +338,5 @@ def register(ctx: Any, root: Path) -> None:
     for name in ("on_session_end", "on_session_reset", "on_session_finalize"):
         ctx.register_hook(name, adapter.clear)
     ctx.register_middleware("tool_execution", tool_execution)
+    ctx.register_middleware("llm_request", llm_request)
     ctx.register_skill("agentcosplay", root / "plugins/agentcosplay/skills/agentcosplay/SKILL.md")

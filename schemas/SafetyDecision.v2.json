@@ -1,0 +1,249 @@
+{
+  "$defs": {
+    "DecisionReason": {
+      "additionalProperties": false,
+      "description": "Explain a decision without embedding private bodies. / 解释决策，不附带私人正文。",
+      "properties": {
+        "code": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Code",
+          "type": "string"
+        },
+        "evidence_refs": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Evidence Refs",
+          "type": "array"
+        }
+      },
+      "required": [
+        "code"
+      ],
+      "title": "DecisionReason",
+      "type": "object"
+    },
+    "Evidence": {
+      "additionalProperties": false,
+      "description": "A detector observation, never an authorization. / 检测观察不授予权限。",
+      "properties": {
+        "id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Id",
+          "type": "string"
+        },
+        "source": {
+          "title": "Source",
+          "type": "string"
+        },
+        "kind": {
+          "title": "Kind",
+          "type": "string"
+        },
+        "confidence": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Confidence",
+          "type": "number"
+        },
+        "details": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "title": "Details",
+          "type": "object"
+        }
+      },
+      "required": [
+        "id",
+        "source",
+        "kind",
+        "confidence"
+      ],
+      "title": "Evidence",
+      "type": "object"
+    },
+    "JsonValue": {},
+    "SensitivityAssessment": {
+      "additionalProperties": false,
+      "description": "Independent risk axes; none claims that a detected value is genuine.\n独立风险维度；不声称检测值一定是真实凭据或真人信息。",
+      "properties": {
+        "private": {
+          "default": 0,
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Private",
+          "type": "number"
+        },
+        "person_linkable": {
+          "default": 0,
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Person Linkable",
+          "type": "number"
+        },
+        "authentication": {
+          "default": 0,
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Authentication",
+          "type": "number"
+        },
+        "financial": {
+          "default": 0,
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Financial",
+          "type": "number"
+        },
+        "health": {
+          "default": 0,
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Health",
+          "type": "number"
+        },
+        "precise_location": {
+          "default": 0,
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Precise Location",
+          "type": "number"
+        },
+        "contact": {
+          "default": 0,
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Contact",
+          "type": "number"
+        },
+        "confidence": {
+          "default": 0,
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Confidence",
+          "type": "number"
+        }
+      },
+      "title": "SensitivityAssessment",
+      "type": "object"
+    },
+    "StorageAuthorization": {
+      "additionalProperties": false,
+      "description": "Approval is bound to exact content and operation; never a reusable blanket bool.\n批准绑定精确正文和操作，不是可重复使用的无限制布尔许可。",
+      "properties": {
+        "explicit": {
+          "title": "Explicit",
+          "type": "boolean"
+        },
+        "scope": {
+          "default": "this_memory",
+          "enum": [
+            "this_span",
+            "this_memory",
+            "this_operation"
+          ],
+          "title": "Scope",
+          "type": "string"
+        },
+        "operation_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Operation Id",
+          "type": "string"
+        },
+        "content_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Content Sha256",
+          "type": "string"
+        },
+        "span_start": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Span Start"
+        },
+        "span_end": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Span End"
+        }
+      },
+      "required": [
+        "explicit",
+        "operation_id",
+        "content_sha256"
+      ],
+      "title": "StorageAuthorization",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Ephemeral policy result with auditable reasons and no plaintext echo.\n可审计的临时策略结果，不回显私人正文。",
+  "properties": {
+    "action": {
+      "enum": [
+        "allow",
+        "require_confirmation",
+        "reject"
+      ],
+      "title": "Action",
+      "type": "string"
+    },
+    "assessment": {
+      "$ref": "#/$defs/SensitivityAssessment"
+    },
+    "reasons": {
+      "items": {
+        "$ref": "#/$defs/DecisionReason"
+      },
+      "title": "Reasons",
+      "type": "array"
+    },
+    "evidence": {
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/Evidence"
+      },
+      "title": "Evidence",
+      "type": "array"
+    },
+    "authorization": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/StorageAuthorization"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    }
+  },
+  "required": [
+    "action",
+    "assessment",
+    "reasons"
+  ],
+  "title": "SafetyDecision",
+  "type": "object",
+  "$schema": "https://json-schema.org/draft/2020-12/schema"
+}

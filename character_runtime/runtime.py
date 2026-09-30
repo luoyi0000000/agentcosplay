@@ -27,7 +27,9 @@ from .memory import Memories
 from .models import CharacterState, Memory, Session, TaskMode, VoiceProfile, now
 from .persistence_models import GenerationRequest
 from .providers import Provider, SystemTimeProvider
-from .rules import BASE_RULES, MODE_RULES, TASK_RULES
+from .retrieval import SemanticIndex
+from .rules import BASE_RULES, ExpressionPolicy
+from .safety import SensitivityClassifier
 from .scope import ScopeResolver
 from .scoped_storage import ScopedStorage
 from .storage import Storage
@@ -46,6 +48,8 @@ class Runtime:
         *,
         clock: Callable[[], datetime] = now,
         providers: Iterable[Provider] = (),
+        semantic_index: SemanticIndex | None = None,
+        safety_classifier: SensitivityClassifier | None = None,
     ) -> None:
         if not owner.strip() or len(owner) > 200 or "\0" in owner:
             raise ValueError("A valid authenticated owner is required")
@@ -59,9 +63,13 @@ class Runtime:
             self.characters,
             clock,
             scope=storage.memory_scope if isinstance(storage, ScopedStorage) else None,
+            semantic_index=semantic_index,
+            safety_classifier=safety_classifier,
         )
         self.knowledge = Knowledge(storage, owner, self.characters, self.memory, clock)
-        self.companion = Companion(storage, owner, self.characters, clock)
+        self.companion = Companion(
+            storage, owner, self.characters, clock, safety_classifier=safety_classifier
+        )
         self.providers = (SystemTimeProvider(clock), *providers)
 
     def for_turn(self, turn_id: str) -> "Runtime":
@@ -73,7 +81,13 @@ class Runtime:
             raise ValueError("A scoped turn cannot open another participant's turn")
         resolver = ScopeResolver(self.storage, self.owner, self.clock)
         actor = resolver.load_turn(turn_id)
-        return Runtime(ScopedStorage(self.storage, resolver, actor), self.owner, clock=self.clock)
+        return Runtime(
+            ScopedStorage(self.storage, resolver, actor),
+            self.owner,
+            clock=self.clock,
+            semantic_index=self.memory.semantic_index,
+            safety_classifier=self.memory.safety_classifier,
+        )
 
     def advance(self, character_id: str) -> None:
         """Refresh optional perception and advance companion state in one transaction.
@@ -262,7 +276,10 @@ class Runtime:
                 }
                 return result
             self.knowledge.scope(session_id)
-            prepared = self.storage.get(self.owner, "turn_lifecycle", session_id)
+            # Conversation identity cannot replace the authenticated current-turn identity.
+            # 持久会话标识不能替代已认证的当前回合标识，否则工具可绕过本轮生成契约。
+            current_turn_id = self.actor.id if self.actor else session_id
+            prepared = self.storage.get(self.owner, "turn_lifecycle", current_turn_id)
             if prepared:
                 # A prepared turn owns its contract across tool calls and restarts. Never
                 # look up another turn by conversation: next-turn defaults stay independent.
@@ -299,11 +316,12 @@ class Runtime:
                 memories=[
                     m.model_dump(mode="json")
                     for m in self.memory.recall(
-                        definition.id, query, session_id=session.id, limit=8
+                        definition.id, query, session_id=session.id, limit=8, generation=generation
                     )
                 ],
                 effective_mode=mode,
             )
+            result["retrieval_decisions"] = self.memory.retrieval_diagnostics
             projected_memories, decisions = self.memory.project(
                 definition.id,
                 [Memory.model_validate(m) for m in result["memories"]],
@@ -336,6 +354,11 @@ class Runtime:
                 result["state"]["relationship"],
                 "task_neutral" if session.ooc else mode,
             )
+            result["expression_policy"]["resolved"] = ExpressionPolicy.resolve(
+                generation, mode, ooc=session.ooc
+            ).model_dump(mode="json")
+            result["effective_voice"] = effective_voice.model_dump(mode="json")
+            result["generation_request"] = generation.model_dump(mode="json")
             # ponytail: audience scan; index delivered timestamps when histories grow.
             # 只扫描已授权受众；历史量增大时再为已发送时间建立索引。
             usage = expression_observations(
@@ -354,11 +377,6 @@ class Runtime:
                 if result["expression_policy"]["character_expression"]["enabled"]
                 else []
             )
-            result["rules"] += [MODE_RULES[definition.mode], TASK_RULES[mode]]
-            if session.ooc:
-                result["rules"].append(
-                    "User explicitly entered OOC; discuss configuration plainly."
-                )
             if include_companion:
                 result["companion"] = self.companion.context(definition.id, query)
             if self.actor is None or self.actor.private_context_allowed:

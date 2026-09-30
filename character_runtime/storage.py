@@ -64,6 +64,11 @@ class Storage(Protocol):
     要求按 Owner 持久化；检索必须在排序和限额前约束作用域。
     """
 
+    @property
+    def in_transaction(self) -> bool:
+        """External derived writes require a committed boundary. / 外部派生写入要求已提交边界。"""
+        ...
+
     def transaction(self) -> AbstractContextManager[None]:
         """Commit as a unit or roll back, preserving nested transaction semantics.
 
@@ -96,6 +101,22 @@ class Storage(Protocol):
         """Delete only the addressed owner record, never another namespace.
 
         仅删除指定 Owner 的记录，不越过命名空间。
+        """
+        ...
+
+    def memory_eligible_ids(
+        self,
+        owner: str,
+        character_id: str,
+        *,
+        session_id: str | None,
+        real: bool,
+        at: datetime,
+        include_archived: bool = False,
+        scope: MemoryScope | None = None,
+    ) -> builtins.list[str]:
+        """Resolve the complete authorized index population before semantic ranking.
+        在语义排序前解析完整的已授权索引集合。
         """
         ...
 
@@ -601,6 +622,12 @@ class SQLiteStorage:
         else:
             self._connection.execute("UPDATE retrieval_meta SET value = 1 WHERE key = 'fts_dirty'")
 
+    @property
+    def in_transaction(self) -> bool:
+        """Report active nesting without exposing the connection. / 报告事务嵌套，不暴露连接。"""
+        with self._lock:
+            return self._transaction_depth > 0
+
     @contextmanager
     def transaction(self) -> Iterator[None]:
         """Commit as a unit or roll back, preserving nested transaction semantics.
@@ -693,6 +720,32 @@ class SQLiteStorage:
             )
             if collection == "memory":
                 self._remove_memory_index(owner, key)
+
+    def memory_eligible_ids(
+        self,
+        owner: str,
+        character_id: str,
+        *,
+        session_id: str | None,
+        real: bool,
+        at: datetime,
+        include_archived: bool = False,
+        scope: MemoryScope | None = None,
+    ) -> builtins.list[str]:
+        """Resolve the complete authorized index population before semantic ranking.
+        在语义排序前解析完整的已授权索引集合。
+        """
+        audience, args = memory_scope_sql("m", owner, scope)
+        status = "m.status IN ('active','archived')" if include_archived else "m.status='active'"
+        with self._lock:
+            rows = self._connection.execute(
+                "SELECT m.key FROM memory_index m WHERE m.owner=? AND m.character_id=? "
+                f"AND {status} AND m.kind {'=' if real else '!='} 'real_user' "
+                "AND (m.kind != 'session' OR m.session_id=?) "
+                f"AND (m.expires IS NULL OR m.expires>?) AND {audience} ORDER BY m.key",
+                (owner, character_id, session_id, at.timestamp(), *args),
+            ).fetchall()
+        return [row[0] for row in rows]
 
     def memory_window(
         self,
@@ -794,8 +847,11 @@ class SQLiteStorage:
                 expression = " OR ".join('"' + term.replace('"', '""') + '"' for term in wanted)
                 rows = self._connection.execute(
                     "SELECT m.id FROM memory_fts JOIN memory_index m ON m.id = memory_fts.rowid "
-                    f"WHERE memory_fts MATCH ? AND {where} ORDER BY m.observed DESC, m.id LIMIT ?",
-                    (expression, *parameters, lane),
+                    f"WHERE memory_fts MATCH ? AND {where} "
+                    "ORDER BY (SELECT count(*) FROM memory_tokens mt WHERE mt.memory_id=m.id "
+                    f"AND mt.token IN ({','.join('?' for _ in wanted)})) DESC, "
+                    "m.observed DESC, m.id LIMIT ?",
+                    (expression, *parameters, *wanted, lane),
                 ).fetchall()
                 ids.update((row[0], 1 / (rank + 1)) for rank, row in enumerate(rows))
             if wanted:
@@ -814,7 +870,7 @@ class SQLiteStorage:
                     ),
                 ).fetchall()
                 for row in rows:
-                    ids.setdefault(row[0], 0)
+                    ids.setdefault(row[0], 1 / (len(ids) + 1))
             for order in ("observed DESC, importance DESC", "importance DESC, observed DESC"):
                 rows = self._connection.execute(
                     f"SELECT m.id FROM memory_index m WHERE {where} ORDER BY {order}, id LIMIT ?",
