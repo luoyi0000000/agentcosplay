@@ -6,7 +6,7 @@ Hermes 原生插件入口；Core 继续保持平台中立。
 from pathlib import Path
 from typing import Any
 
-from .character_runtime.hermes_adapter import register as register_adapter
+from .agentcosplay_host.hermes_adapter import register as register_adapter
 
 
 def register(ctx: Any) -> None:

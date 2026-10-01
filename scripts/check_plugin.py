@@ -114,8 +114,15 @@ def check(root: Path = ROOT) -> dict:
     version = tomllib.loads((root / "pyproject.toml").read_text(encoding="utf-8"))["project"][
         "version"
     ]
-    runtime = (root / "character_runtime/__init__.py").read_text(encoding="utf-8")
+    runtime = (root / "runtime/character_runtime/__init__.py").read_text(encoding="utf-8")
     require(f'__version__ = "{version}"' in runtime, "Runtime/package version mismatch")
+    require(
+        tomllib.loads((root / "runtime/pyproject.toml").read_text(encoding="utf-8"))["project"][
+            "version"
+        ]
+        == version,
+        "Runtime/Host SDK version mismatch",
+    )
     for name in ("plugin.yaml", "metadata.yaml"):
         metadata = (root / name).read_text(encoding="utf-8")
         require(

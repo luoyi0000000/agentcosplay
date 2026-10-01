@@ -94,7 +94,7 @@
     }
   },
   "additionalProperties": false,
-  "description": "Resolve turn suppression in code; task expertise never changes identity.\n用代码解析单轮表达抑制；专业任务不改变身份。",
+  "description": "Resolve explicit expression exceptions inside the Runtime.\n在 Runtime 内解析显式表达例外。",
   "properties": {
     "enabled": {
       "title": "Enabled",

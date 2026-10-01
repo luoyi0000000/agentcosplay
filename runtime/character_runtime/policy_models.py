@@ -2,6 +2,9 @@
 共享的小型证据词汇，不建立通用决策引擎；证据不是事实。
 """
 
+from agentcosplay_host.expression import (
+    DecisionReason as DecisionReason,
+)
 from pydantic import Field, JsonValue
 
 from .models import Identifier, Model, Score
@@ -15,10 +18,3 @@ class Evidence(Model):
     kind: str
     confidence: Score
     details: dict[str, JsonValue] = Field(default_factory=dict)
-
-
-class DecisionReason(Model):
-    """Explain a decision without embedding private bodies. / 解释决策，不附带私人正文。"""
-
-    code: Identifier
-    evidence_refs: tuple[str, ...] = ()

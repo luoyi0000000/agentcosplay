@@ -1,6 +1,6 @@
 """Verify migration and recovery using synthetic data in disposable SQLite databases.
 
-Run: uv run --locked python -m scripts.check_migration
+Run: uv run --project runtime --locked python -m scripts.check_migration
 """
 
 import asyncio

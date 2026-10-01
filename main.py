@@ -14,7 +14,7 @@ from astrbot.api.message_components import Plain
 from astrbot.api.provider import LLMResponse, ProviderRequest
 from astrbot.api.star import Context, Star
 
-from .character_runtime.astrbot_adapter import AstrBotAdapter
+from .agentcosplay_host.astrbot_adapter import AstrBotAdapter
 
 
 class AgentCosplay(Star):

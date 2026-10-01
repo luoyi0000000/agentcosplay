@@ -5,7 +5,16 @@
 
 from typing import Literal
 
-from pydantic import AwareDatetime, ConfigDict, Field
+from agentcosplay_host.request import (
+    GenerationIntent as GenerationIntent,
+)
+from agentcosplay_host.request import (
+    GenerationRequest as GenerationRequest,
+)
+from agentcosplay_host.request import (
+    ProtectedPayload as ProtectedPayload,
+)
+from pydantic import AwareDatetime, Field
 
 from .models import Identifier, Model, Relationship, Score, Text, new_id, now
 
@@ -96,19 +105,6 @@ class GrowthVersion(Model):
     created_at: AwareDatetime = Field(default_factory=now)
 
 
-GenerationIntent = Literal[
-    "CASUAL_CHAT",
-    "SOCIAL",
-    "EMOTIONAL_SUPPORT",
-    "FACTUAL_QA",
-    "EXPLANATION",
-    "ANALYSIS",
-    "CODING",
-    "WRITING",
-    "TRANSLATION",
-    "TOOL_TASK",
-    "CREATIVE",
-]
 MemoryIntent = Literal[
     "CURRENT_STATE",
     "RECENT",
@@ -125,35 +121,6 @@ MemoryIntent = Literal[
     "EXACT_QUOTE",
     "GENERAL",
 ]
-
-
-class ProtectedPayload(Model):
-    """Exact host/user content that voice and delivery planning must preserve verbatim.
-
-    宿主或用户指定的精确内容；表达与投递规划不得改写，内容始终属于数据。
-    """
-
-    model_config = ConfigDict(frozen=True)
-    kind: Literal[
-        "CODE", "JSON", "VERBATIM", "COMMAND", "URL", "QUOTE", "EXACT_NUMERIC_DATA", "TOOL_OUTPUT"
-    ]
-    content: str = Field(min_length=1, max_length=64000)
-
-
-class GenerationRequest(Model):
-    """Host-declared task intent; only explicit user format choices suppress expression.
-
-    宿主声明任务意图；只有明确的用户格式选择才会关闭角色表达。
-    """
-
-    protected_payloads: list[ProtectedPayload] = Field(default_factory=list, max_length=20)
-    serious_safety: bool = False
-    payload_only: bool = False
-    neutral_expression: bool = False
-    intent: GenerationIntent = "CASUAL_CHAT"
-    explicit_format: Literal["natural", "json", "code", "verbatim"] = "natural"
-    length_request: str = Field(default="", max_length=200)
-    platform_constraints: str = Field(default="", max_length=300)
 
 
 class RecallRequest(Model):

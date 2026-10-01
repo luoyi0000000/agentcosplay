@@ -15,10 +15,10 @@ from typing import Any, Literal
 
 from pydantic import AliasChoices, AwareDatetime, Field
 
+from .base import Identifier, Model
 from .context_models import UniversalGenerationContext
-from .conversation_models import EndpointCapabilities
+from .endpoints import EndpointCapabilities
 from .host_client import HostBridge
-from .models import Identifier, Model
 
 
 class InputEvidence(StrEnum):

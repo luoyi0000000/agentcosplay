@@ -5,25 +5,14 @@
 
 from typing import Annotated, Literal, Self
 
+from agentcosplay_host.endpoints import (
+    EndpointCapabilities as EndpointCapabilities,
+)
 from pydantic import Field, model_validator
 
 from .models import Identifier, Model
 
 ResponseText = Annotated[str, Field(min_length=1, max_length=64000)]
-
-
-class EndpointCapabilities(Model):
-    """Trusted adapter capabilities, independent of identity and delivery authority.
-
-    可信适配器能力；能力不等于身份，也不等于发送授权。
-    """
-
-    multiple_messages: bool = False
-    typing: bool = False
-    reactions: bool = False
-    stickers: list[Identifier] = Field(default_factory=list, max_length=100)
-    replies: bool = False
-    max_text_chars: int = Field(default=64000, ge=1, le=64000)
 
 
 class SemanticResponse(Model):

@@ -13,6 +13,7 @@ name = "agentcosplay"
 version = "2.0.0"
 source = { editable = "." }
 dependencies = [
+    { name = "agentcosplay-host" },
     { name = "mcp" },
     { name = "pydantic" },
     { name = "pyjwt", extra = ["crypto"] },
@@ -32,6 +33,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "agentcosplay-host", editable = "../" },
     { name = "mcp", specifier = "==2.2.0" },
     { name = "pydantic", specifier = ">=2.12,<3" },
     { name = "pyjwt", extras = ["crypto"], specifier = ">=2.14,<3" },
@@ -48,6 +50,11 @@ dev = [
     { name = "pyyaml", specifier = ">=6.0.3" },
     { name = "ruff", specifier = ">=0.12" },
 ]
+
+[[package]]
+name = "agentcosplay-host"
+version = "2.0.0"
+source = { editable = "../" }
 
 [[package]]
 name = "annotated-types"

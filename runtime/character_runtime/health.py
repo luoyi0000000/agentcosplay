@@ -8,15 +8,18 @@ import sqlite3
 import stat
 import sys
 import tempfile
+from collections.abc import AsyncIterator
+from contextlib import AsyncExitStack, asynccontextmanager, closing
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 from urllib.parse import quote
 
 from mcp import Client
-from mcp.client.stdio import StdioServerParameters
+from mcp.client.stdio import StdioServerParameters, stdio_client
 
 from . import __version__
+from .health_diagnostics import health_stage
 from .storage import SQLiteStorage
 
 
@@ -87,8 +90,9 @@ async def protocol_check(client: Client) -> list[str]:
     通过真实客户端服务端传输验证发现及生命周期。
     """
 
-    names = {tool.name for tool in (await client.list_tools()).tools}
-    assert {"event_ingest", "context_explain", "turn_commit", "proactive_prepare"} <= names
+    with health_stage("health.list-tools"):
+        names = {tool.name for tool in (await client.list_tools()).tools}
+        assert {"event_ingest", "context_explain", "turn_commit", "proactive_prepare"} <= names
     a = (
         await call(
             client,
@@ -239,7 +243,10 @@ async def check(data: Path) -> dict[str, Any]:
     """
 
     database = data / "runtime.sqlite3"
-    with tempfile.TemporaryDirectory(prefix="agentcosplay-schema-check-") as scratch:
+    with (
+        health_stage("health.snapshot"),
+        tempfile.TemporaryDirectory(prefix="agentcosplay-schema-check-") as scratch,
+    ):
         snapshot = Path(scratch) / "runtime.sqlite3"
         if database.exists() or database.is_symlink():
             for suffix in ("", "-wal", "-shm"):
@@ -248,25 +255,49 @@ async def check(data: Path) -> dict[str, Any]:
                     mode = candidate.lstat().st_mode
                     if stat.S_ISLNK(mode) or (os.name == "posix" and mode & 0o077):
                         raise PermissionError("Database files must be private and non-symlink")
-            source = sqlite3.connect(
-                "file:" + quote(str(database.resolve())) + "?mode=ro", uri=True
-            )
-            descriptor = os.open(snapshot, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
-            os.close(descriptor)
-            target = sqlite3.connect(snapshot)
-            try:
-                source.backup(target)
-            finally:
-                target.close()
-                source.close()
-        store = SQLiteStorage(snapshot)
-        store.close()
-    with tempfile.TemporaryDirectory(prefix="agentcosplay-health-") as directory:
+            # Close the source even when creating the snapshot fails (Windows handle locks).
+            # 即使快照创建失败也关闭源连接，避免 Windows 文件句柄锁残留。
+            with closing(
+                sqlite3.connect("file:" + quote(str(database.resolve())) + "?mode=ro", uri=True)
+            ) as source:
+                descriptor = os.open(snapshot, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+                os.close(descriptor)
+                with closing(sqlite3.connect(snapshot)) as target:
+                    source.backup(target)
+        with health_stage("health.storage-check"):
+            store = SQLiteStorage(snapshot)
+            store.close()
+    with (
+        health_stage("health.stdio-teardown"),
+        tempfile.TemporaryDirectory(prefix="agentcosplay-health-") as directory,
+    ):
         params = StdioServerParameters(
             command=sys.executable,
             args=["-m", "character_runtime", "serve"],
             env={**os.environ, "CHARACTER_DATA_DIR": directory, "CHARACTER_OWNER": "healthcheck"},
         )
-        async with Client(params) as client:
-            checks = await protocol_check(client)
+
+        @asynccontextmanager
+        async def transport() -> AsyncIterator[Any]:
+            # Separate process startup from handshake; discard the child's private stderr.
+            # 分离子进程启动与握手；不向调用者输出子进程的私密 stderr。
+            stack = AsyncExitStack()
+            try:
+                with health_stage("health.stdio-spawn"):
+                    errlog = stack.enter_context(open(os.devnull, "w"))
+                    streams = await stack.enter_async_context(stdio_client(params, errlog=errlog))
+                yield streams
+            finally:
+                with health_stage("health.stdio-teardown"):
+                    await stack.aclose()
+
+        stack = AsyncExitStack()
+        try:
+            with health_stage("health.mcp-initialize"):
+                client = await stack.enter_async_context(Client(transport()))
+            with health_stage("health.protocol-check"):
+                checks = await protocol_check(client)
+        finally:
+            with health_stage("health.stdio-teardown"):
+                await stack.aclose()
     return {"ok": True, "version": __version__, "data_dir": str(data), "checks": checks}

@@ -269,7 +269,7 @@
     },
     "ExpressionPolicy": {
       "additionalProperties": false,
-      "description": "Resolve turn suppression in code; task expertise never changes identity.\n用代码解析单轮表达抑制；专业任务不改变身份。",
+      "description": "Validate resolved policy without deciding Runtime expression authority.\n校验已解析的策略，不在宿主决定 Runtime 表达权限。",
       "properties": {
         "enabled": {
           "title": "Enabled",

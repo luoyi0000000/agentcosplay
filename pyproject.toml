@@ -3,36 +3,24 @@ requires = ["hatchling==1.32.3"]
 build-backend = "hatchling.build"
 
 [project]
-name = "agentcosplay"
+name = "agentcosplay-host"
 version = "2.0.0"
-description = "Platform-neutral character state and memory runtime"
+description = "Host protocol SDK and native bindings; uses Host-provided dependencies"
 license = "MIT"
 license-files = ["LICENSE"]
 requires-python = ">=3.11"
-dependencies = [
-  "pydantic>=2.12,<3", "mcp==2.2.0", "pyjwt[crypto]>=2.14,<3",
-  "uvicorn>=0.53,<1", "starlette>=1.6,<2",
-  "pyyaml>=6.0.3", "tomlkit==0.15.1",
-  "tzdata>=2025.2; sys_platform == 'win32'",
-]
-
-[project.scripts]
-agentcosplay = "character_runtime.cli:main"
-character-runtime = "character_runtime.cli:main"
-
-[dependency-groups]
-dev = [
-    "ruff>=0.12",
-    "mypy>=1.15",
-    "pyyaml>=6.0.3",
-]
+dependencies = []
 
 [tool.hatch.build.targets.wheel]
-packages = ["character_runtime"]
+packages = ["agentcosplay_host"]
+
+[tool.hatch.build.targets.sdist]
+include = ["agentcosplay_host", "pyproject.toml", "LICENSE"]
 
 [tool.ruff]
 line-length = 100
 target-version = "py311"
+src = [".", "runtime"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP"]
@@ -40,3 +28,5 @@ select = ["E", "F", "I", "UP"]
 [tool.mypy]
 python_version = "3.11"
 strict = true
+explicit_package_bases = true
+mypy_path = ["runtime", "."]

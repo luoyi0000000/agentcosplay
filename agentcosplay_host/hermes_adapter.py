@@ -272,38 +272,63 @@ def register(ctx: Any, root: Path) -> None:
     from hermes_cli.config import load_config_readonly  # type: ignore[import-not-found]
     from hermes_cli.plugins import resolve_plugin_command_result  # type: ignore[import-not-found]
 
-    adapter = HermesAdapter(
-        ctx.get_config("runtime_url"),
-        Path(ctx.get_config("token_file")),
-        ctx.get_config("host_id", "hermes"),
-        ctx.get_config("routes", []),
-        cli_binding=ctx.get_config("cli_binding", None),
-    )
-    with adapter.bridge.token_file.open(encoding="ascii") as source:
-        owner_token = source.read(4097).strip()
-    if not 32 <= len(owner_token) <= 4096:
-        raise ValueError("Invalid Runtime credential file")
-    discovery = hmac.new(
-        owner_token.encode(), b"agentcosplay:model-discovery:v1", hashlib.sha256
-    ).hexdigest()
-    server = (load_config_readonly() or {}).get("mcp_servers", {}).get("agentcosplay", {})
-    if (
-        server.get("url") != adapter.bridge.url
-        or server.get("command")
-        or server.get("headers", {}).get("Authorization") != "Bearer " + discovery
-    ):
-        raise ValueError("Connect Hermes with --native-hermes before enabling the plugin")
+    adapter: HermesAdapter | None = None
+    initialization_lock = threading.Lock()
+
+    def configured() -> HermesAdapter:
+        # Doctor registers without user settings. Authenticate on use, never at import.
+        # Doctor 注册时没有用户配置；使用时鉴权，不在导入时读取凭据。
+        nonlocal adapter
+        with initialization_lock:
+            if adapter is None:
+                candidate = HermesAdapter(
+                    ctx.get_config("runtime_url"),
+                    Path(ctx.get_config("token_file")),
+                    ctx.get_config("host_id", "hermes"),
+                    ctx.get_config("routes", []),
+                    cli_binding=ctx.get_config("cli_binding", None),
+                )
+                with candidate.bridge.token_file.open(encoding="ascii") as source:
+                    owner_token = source.read(4097).strip()
+                if not 32 <= len(owner_token) <= 4096:
+                    raise ValueError("Invalid Runtime credential file")
+                discovery = hmac.new(
+                    owner_token.encode(), b"agentcosplay:model-discovery:v1", hashlib.sha256
+                ).hexdigest()
+                server = (
+                    (load_config_readonly() or {}).get("mcp_servers", {}).get("agentcosplay", {})
+                )
+                if (
+                    server.get("url") != candidate.bridge.url
+                    or server.get("command")
+                    or server.get("headers", {}).get("Authorization") != "Bearer " + discovery
+                ):
+                    raise ValueError(
+                        "Connect Hermes with --native-hermes before enabling the plugin"
+                    )
+                adapter = candidate
+            return adapter
+
+    def capture(**kwargs: Any) -> None:
+        configured().capture(**kwargs)
+
+    async def observe(**kwargs: Any) -> None:
+        await configured().observe(**kwargs)
+
+    def clear(**kwargs: Any) -> None:
+        if adapter is not None:
+            adapter.clear(**kwargs)
 
     async def pre_llm_call(**kwargs: Any) -> None:
         env = {
             "HERMES_SESSION_" + k: get_session_env("HERMES_SESSION_" + k)
             for k in ("PLATFORM", "CHAT_ID", "CHAT_TYPE", "THREAD_ID", "USER_ID", "MESSAGE_ID")
         }
-        await adapter.context(env, **kwargs)
+        await configured().context(env, **kwargs)
 
     def llm_request(request: dict[str, Any], **kwargs: Any) -> dict[str, Any]:
         try:
-            return {"request": adapter.generation_request(request, **kwargs)}
+            return {"request": configured().generation_request(request, **kwargs)}
         except Exception:
             # Official middleware exceptions restore the original kwargs. Returning an
             # empty request removes ALL payload/credentials instead; providers cannot
@@ -327,16 +352,16 @@ def register(ctx: Any, root: Path) -> None:
         # Hermes 执行中间件异常时会继续下游，因此必须返回错误信封；发现令牌另行兜底拒绝。
         try:
             return resolve_plugin_command_result(
-                adapter.tool(session_id, turn_id, tool_name[len(prefix) :], args)
+                configured().tool(session_id, turn_id, tool_name[len(prefix) :], args)
             )
         except Exception:
             return json.dumps({"ok": False, "error": "Verified Runtime turn required"})
 
-    ctx.register_hook("pre_gateway_dispatch", adapter.capture)
+    ctx.register_hook("pre_gateway_dispatch", capture)
     ctx.register_hook("pre_llm_call", pre_llm_call)
-    ctx.register_hook("post_llm_call", adapter.observe)
+    ctx.register_hook("post_llm_call", observe)
     for name in ("on_session_end", "on_session_reset", "on_session_finalize"):
-        ctx.register_hook(name, adapter.clear)
+        ctx.register_hook(name, clear)
     ctx.register_middleware("tool_execution", tool_execution)
     ctx.register_middleware("llm_request", llm_request)
     ctx.register_skill("agentcosplay", root / "plugins/agentcosplay/skills/agentcosplay/SKILL.md")

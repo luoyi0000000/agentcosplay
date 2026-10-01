@@ -1,6 +1,6 @@
 """Opt-in, network-using acceptance of the actual installer in disposable directories.
 
-Run: uv run --locked python -m scripts.check_installation
+Run: uv run --project runtime --locked python -m scripts.check_installation
 No existing host configuration is touched. All character content is synthetic.
 """
 
@@ -219,17 +219,19 @@ def main() -> None:
         checkout.mkdir()
         for name in (
             "install.py",
-            "character_runtime",
+            "runtime",
+            "agentcosplay_host",
             "plugins",
             "pyproject.toml",
-            "uv.lock",
             "build-constraints.txt",
             "LICENSE",
         ):
             source = SOURCE / name
             if source.is_dir():
                 shutil.copytree(
-                    source, checkout / name, ignore=shutil.ignore_patterns("__pycache__")
+                    source,
+                    checkout / name,
+                    ignore=shutil.ignore_patterns("__pycache__", ".venv", "dist"),
                 )
             else:
                 shutil.copy2(source, checkout / name)

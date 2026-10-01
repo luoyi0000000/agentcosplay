@@ -10,14 +10,7 @@ import os
 import time
 from pathlib import Path
 
-import uvicorn
-
 from .paths import runtime_data_dir
-from .providers import JSONFileProvider, Kind
-from .runtime import Runtime
-from .scheduler import tick
-from .server import build_server, http_app
-from .storage import SQLiteStorage
 
 
 def main() -> None:
@@ -39,14 +32,29 @@ def main() -> None:
         command.add_argument("--provider-file", action="append", default=[], metavar="KIND=PATH")
     sub.add_parser("doctor", help="Verify storage and real MCP discovery without user records")
     args = parser.parse_args()
-    data = runtime_data_dir()
     if args.command == "doctor":
-        from .health import check
+        from .health_diagnostics import HealthFailure, health_stage
 
-        # -I ignores PYTHONUTF8; escaped JSON preserves Unicode on Windows pipes.
-        # -I 忽略 PYTHONUTF8；转义后的 JSON 可在 Windows 管道中无损传递中文。
-        print(json.dumps(asyncio.run(check(data))))
+        try:
+            with health_stage("health.import"):
+                from .health import check
+            with health_stage("health.storage-open"):
+                data = runtime_data_dir()
+            result = asyncio.run(check(data))
+        except HealthFailure as error:
+            print(json.dumps(error.envelope()))
+            raise SystemExit(1) from None
+        print(json.dumps(result))
         return
+    import uvicorn
+
+    from .providers import JSONFileProvider, Kind
+    from .runtime import Runtime
+    from .scheduler import tick
+    from .server import build_server, http_app
+    from .storage import SQLiteStorage
+
+    data = runtime_data_dir()
     storage = SQLiteStorage(data / "runtime.sqlite3")
     try:
         owner = os.environ.get("CHARACTER_OWNER", "local-user")

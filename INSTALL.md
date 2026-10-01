@@ -71,6 +71,18 @@ python3 install.py run --transport http
 
 ### Hermes 官方钩子接入（管理员 / 安装 Agent）
 
+推荐安装 Agent 使用显式入口 `install.py native-hermes`，指定真实 `--host-dir`、该 Hermes 所用的 `--hermes-python` 和经 Owner 确认的 `--routes-file`。它安装/更新独立 Runtime、运行健康检查、配置仅发现凭据、启动或复用本机 HTTP，通过官方插件管理器安装、检查并启用插件。不会自动重启 Hermes Gateway；返回 `gateway_restart_required=true` 后由用户安排重启。
+
+路由文件是本地私密 JSON，包含 `owner_verified: true`、稳定 `host_id` 和 `routes` 列表。每项明确填写 `platform`、`chat_id`、`thread_id`（无线程为空）、`chat_type`、`runtime_platform`、真实外部 `endpoint`、`kind`、已存在的 `character_id` 和 `actors: [{actor_id, participant_id}]`。私聊只能有一个 Actor；群聊不能变成私人受众。不要填写 `endpoint_id`，它由 Runtime 绑定返回。修改既有端点需要显式的 `expected_revision`。角色先通过普通安装入口创建；不自动制造角色、真人或平台地址。
+
+该入口要求指定的 Python 能加载 Hermes 官方 CLI；安装命令与依赖快照使用同一个解释器，不另从 PATH 选择其他 Hermes。根目录插件依赖为空，Runtime 的锁定依赖只装入独立环境。旧插件若仍声明 Runtime 依赖，安装会在启用前拒绝；请通过官方管理器更新为本轮版本，不使用强制安装或跳过安全扫描。官方检查或绑定失败会停止，不将失败报告为成功；已完成的 Runtime 安装及绑定回执保留，使用同一份路由重试可续接，文件事务中断则先执行 `recover`。私密依赖检查点会保留中断前的基线；若宿主依赖期间变化，重试会拒绝并要求先核对环境，不能把变化后的版本冒充初始状态。
+
+卸载或切回普通 MCP 时，会先通过同一 Hermes 的官方命令禁用本安装管理的原生插件，再移除匹配的 settings；不删除人物或身份记录。发现用户修改过 settings 会拒绝覆盖。完成后按提示重载 Gateway，使已经加载的中间件退出。
+
+若本轮启动了 HTTP，失败时会关闭自己启动的进程；成功后保持运行，但没有注册系统自启动。若复用了旧进程，返回 `runtime_restart_required=true` 提醒在方便时重启 Runtime 加载更新，绝不自行终止其他进程。正常重启、回滚或卸载前仍需按下文停止共享 Runtime。真实 Hermes/QQ 接入和依赖不变性需在实际宿主补验，本地合成 CLI 检查不能代替。
+
+需要手工分步配置时继续使用以下流程。
+
 现有单用户 MCP 安装方式保持不变。需要自动角色上下文时，先停止 Hermes，在同一已安装 Runtime 上执行 `python3 install.py connect --host hermes --transport http --native-hermes`。这会将该宿主 MCP 配置切换为仅发现凭据；实际工具权限由每轮已验证身份决定。继续按上文启动共享 HTTP Runtime。
 
 使用 Hermes 官方 `hermes plugins install luoyi0000000/agentcosplay` 安装此仓库的 `plugin.yaml` / `__init__.py` 入口。Hermes 环境需启用其官方 MCP 依赖，不要把 Runtime 的整套锁定依赖强行安装进 Hermes 环境。
