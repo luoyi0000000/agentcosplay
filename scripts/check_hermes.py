@@ -118,6 +118,10 @@ def registration_checks(token, settings, env):
         assert "post_llm_call" in hooks
         assert skills["agentcosplay"].is_file()
         assert "llm_request" in middleware
+        request = {"messages": [{"role": "user", "content": "synthetic private input"}]}
+        with patch.object(HermesAdapter, "generation_request", return_value=request) as generate:
+            assert middleware["llm_request"](request) == {"request": request}
+            generate.assert_called_once_with(request)
         # Corrupted owned boundaries must not reach the provider through hook fail-open.
         # 自有边界被破坏时，不得经宿主钩子的失败放行路径送到模型提供方。
         assert middleware["llm_request"](
@@ -147,12 +151,29 @@ def registration_checks(token, settings, env):
         config["mcp_servers"]["agentcosplay"]["headers"]["Authorization"] = (
             "Bearer " + token.read_text()
         )
-        try:
-            register(ctx, Path(__file__).resolve().parents[1])
-        except ValueError:
-            pass
-        else:
-            raise AssertionError("Native entry accepted an owner MCP credential")
+        register(ctx, Path(__file__).resolve().parents[1])
+        # A fresh lazy registration must reject owner credentials before any operation.
+        # 全新延迟注册必须在执行任何操作前拒绝 Owner 凭据，不转发私有请求。
+        with (
+            patch.object(HermesAdapter, "generation_request", return_value=request) as generate,
+            patch.object(HermesAdapter, "tool", return_value={"ok": True}) as tool,
+        ):
+            assert middleware["llm_request"](request) == {"request": {}}
+            assert not json.loads(
+                middleware["tool_execution"](
+                    tool_name="mcp__agentcosplay__runtime_context",
+                    args={},
+                    next_call=downstream,
+                )
+            )["ok"]
+            generate.assert_not_called()
+            tool.assert_not_called()
+        # Official Doctor registers in an empty profile, before any credentials exist.
+        # 官方 Doctor 在空配置中注册钩子，此时不应读取不存在的凭据。
+        settings.clear()
+        register(ctx, Path(__file__).resolve().parents[1])
+        assert set(hooks) >= {"pre_gateway_dispatch", "pre_llm_call", "post_llm_call"}
+        assert middleware["llm_request"]({"messages": []}) == {"request": {}}
 
 
 def sample_projection():

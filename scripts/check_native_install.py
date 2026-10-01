@@ -25,10 +25,14 @@ from character_runtime.storage import SQLiteStorage
 
 
 def main():
-    assert install.hermes_command(Path("/host/venv/bin/python"))[:3] == [
-        "/host/venv/bin/python",
+    # Preserve the supplied venv interpreter; path spelling is platform-native.
+    # 保留传入的虚拟环境解释器；路径表示遵循当前平台，不解析符号链接。
+    python = Path(sys.executable)
+    assert install.hermes_command(python) == [
+        str(python),
         "-I",
         "-c",
+        "from hermes_cli.main import main; main()",
     ]
     with TemporaryDirectory() as directory:
         root = Path(directory)

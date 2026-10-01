@@ -3,6 +3,7 @@
 """
 
 from contextlib import closing
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
@@ -45,16 +46,20 @@ def main():
         closing(SQLiteStorage(Path(tmp) / "runtime.sqlite3")) as store,
     ):
         index = Index()
-        rt = Runtime(store, "owner", semantic_index=index)
+        instant = datetime(2026, 1, 1, tzinfo=UTC)
+        rt = Runtime(store, "owner", semantic_index=index, clock=lambda: instant)
         cid = rt.characters.create(CharacterDefinition(name="test")).id
         a = rt.memory.store(
             cid, Candidate(content="sleep at midnight", kind="character_long_term", importance=0.8)
         )
+        # RECENT bounds must not depend on writes tying at SQLite's millisecond precision.
+        # 显式拉开记录时间，避免 SQLite 毫秒精度下同时间记录的排序影响 RECENT 边界验证。
+        instant += timedelta(seconds=1)
         b = rt.memory.store(
             cid,
             Candidate(content="model XR-73 costs 42", kind="character_long_term", importance=0.8),
         )
-        other = Runtime(store, "other", semantic_index=index)
+        other = Runtime(store, "other", semantic_index=index, clock=rt.clock)
         oid = other.characters.create(CharacterDefinition(name="other")).id
         private = other.memory.store(
             oid,
@@ -75,7 +80,7 @@ def main():
         assert rt.memory.recall(cid, "需要休息", limit=1)[0].id == a.id
         assert all(private.id not in ids for _, ids in index.calls)
         assert rt.memory.recall(cid, "XR-73 42", limit=1)[0].id == b.id
-        plain = Runtime(store, "owner")
+        plain = Runtime(store, "owner", clock=rt.clock)
         assert plain.memory.recall(cid, "XR-73 42", limit=1)[0].id == b.id
         assert plain.memory.recall(cid, current_topic="sleep", limit=1)[0].id == a.id
         assert plain.memory.recall(cid, active_goals=["sleep"], limit=1)[0].id == a.id
