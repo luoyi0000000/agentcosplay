@@ -22,6 +22,7 @@ from mcp import Client
 from mcp.client.stdio import StdioServerParameters
 from mcp.client.streamable_http import streamable_http_client
 
+import install
 from character_runtime.health import call, remember
 
 SOURCE = Path(__file__).resolve().parents[1]
@@ -278,11 +279,7 @@ def main() -> None:
                 "--port",
                 str(port),
             )
-        process = subprocess.Popen(
-            [sys.executable, str(app / "launch.py"), "serve", "--transport", "http"],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
+        process = install.start_http_runtime(app)
         try:
             for _ in range(100):
                 if process.poll() is not None:
@@ -336,7 +333,16 @@ def main() -> None:
         )
         print("PASS native AstrBot discovery-only configuration", flush=True)
         first = json.loads((app / "installed.json").read_text(encoding="utf-8"))["active"]
+        launcher = app / "launch.py"
+        current_launcher = launcher.read_bytes()
+        # Exercise upgrading the exact old launcher, including an installed path with spaces.
+        legacy_launcher = current_launcher.split(b"command = [", 1)[0] + (
+            b'os.execv(str(python), [str(python), "-I", "-m", '
+            b'"character_runtime", *sys.argv[1:]])\n'
+        )
+        launcher.write_bytes(legacy_launcher)
         command("update", "--host", "generic")
+        assert launcher.read_bytes() == current_launcher
         assert json.loads((app / "installed.json").read_text(encoding="utf-8"))["active"] != first
         command("doctor")
         asyncio.run(stdio(root, character))

@@ -191,7 +191,7 @@ def orchestration():
 
         def spawn(*args, **kwargs):
             child = original_popen(*args, **kwargs)
-            if "launch.py" in " ".join(args[0]):
+            if args[0][-3:] == ["serve", "--transport", "http"]:
                 children.append(child)
             return child
 
@@ -232,6 +232,7 @@ def orchestration():
                 )
                 assert result["ok"] and result["gateway_restart_required"]
                 assert result["runtime_started"] and not result["real_platform_verified"]
+                assert children[-1].poll() is None, "Runtime process detached from its supervisor"
                 config = yaml.safe_load((host / "config.yaml").read_text())
                 assert config["unrelated"] == "preserved"
                 assert (

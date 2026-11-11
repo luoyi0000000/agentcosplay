@@ -48,8 +48,14 @@ if "http" in sys.argv[1:] and state.get("http_port"):
     os.environ["CHARACTER_HOST"] = "127.0.0.1"
     os.environ["CHARACTER_PORT"] = str(state["http_port"])
     os.environ["CHARACTER_RESOURCE_URL"] = f"http://127.0.0.1:{state['http_port']}/mcp"
-os.execv(str(python), [str(python), "-I", "-m", "character_runtime", *sys.argv[1:]])
+command = [str(python), "-I", "-m", "character_runtime", *sys.argv[1:]]
+if os.name == "nt":
+    import subprocess
+    raise SystemExit(subprocess.call(command))
+os.execv(str(python), command)
 """
+# Exact pre-fix launcher; allow its upgrade without overwriting user edits.
+LEGACY_LAUNCHER_SHA256 = "984bee23bce5a2128ff0ddd6238ff3b701053f245b208d0d4b0821724d700194"
 
 
 def digest(value: bytes) -> str:
@@ -480,7 +486,9 @@ def install(
         result = health(release, data, owner)
         launcher = root / "launch.py"
         existing_launcher = read(launcher)
-        if existing_launcher not in (None, LAUNCHER.encode()):
+        if existing_launcher not in (None, LAUNCHER.encode()) and (
+            digest(existing_launcher) != LEGACY_LAUNCHER_SHA256
+        ):
             raise ValueError("Installed launcher has user edits; refusing overwrite")
         tx.write(launcher, LAUNCHER.encode())
         integrations = list(old.get("integrations", []))
@@ -715,6 +723,34 @@ def detach_native(release: Path, entry: dict[str, Any], tx: Transaction) -> None
     tx.write(config, text.encode(), expected=current)
 
 
+def start_http_runtime(root: Path) -> subprocess.Popen[bytes]:
+    state = state_of(root)
+    release = release_at(root, state["active"])
+    env = {
+        k: v
+        for k, v in os.environ.items()
+        if k not in {"PYTHONPATH", "PYTHONHOME", "VIRTUAL_ENV", "UV_PROJECT_ENVIRONMENT"}
+    }
+    env.update(
+        CHARACTER_DATA_DIR=state["data_dir"],
+        CHARACTER_OWNER=state["owner"],
+        CHARACTER_TOKEN=(root / "http-token").read_text().strip(),
+        CHARACTER_HOST="127.0.0.1",
+        CHARACTER_PORT=str(state["http_port"]),
+        CHARACTER_RESOURCE_URL=f"http://127.0.0.1:{state['http_port']}/mcp",
+    )
+    # Windows execv detaches the service from Popen, defeating readiness checks and cleanup.
+    return subprocess.Popen(
+        [str(python_at(release)), "-I", "-m", "character_runtime", "serve", "--transport", "http"],
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        start_new_session=os.name != "nt",
+        env=env,
+        creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0,
+    )
+
+
 def native_hermes(
     root: Path,
     host_dir: Path,
@@ -802,25 +838,10 @@ def native_hermes(
         try:
             with socket.create_connection(("127.0.0.1", port), timeout=0.2):
                 pass
-        except ConnectionRefusedError:
+        except (ConnectionRefusedError, TimeoutError):
             # Only an explicit native installation starts loopback HTTP; never restart a Host.
             # 仅显式原生安装启动本机 HTTP；绝不重启宿主。
-            child = subprocess.Popen(
-                [
-                    str(python_at(release)),
-                    "-I",
-                    str(root / "launch.py"),
-                    "serve",
-                    "--transport",
-                    "http",
-                ],
-                stdin=subprocess.DEVNULL,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                start_new_session=os.name != "nt",
-                env=env,
-                creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0,
-            )
+            child = start_http_runtime(root)
             deadline = time.monotonic() + 20
             while time.monotonic() < deadline:
                 if child.poll() is not None:
